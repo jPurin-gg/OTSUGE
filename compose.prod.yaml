@@ -1,0 +1,57 @@
+services:
+  frontend:
+    image: otsuge-frontend-prod
+    build:
+      context: ./frontend
+      target: runner
+    env_file:
+      - ./frontend/frontend.prod.env
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  backend:
+    image: otsuge-backend-prod
+    build:
+      context: ./backend
+      target: runner
+    env_file:
+      - ./backend/backend.prod.env
+      - ./database/database.prod.env
+    ports:
+      - "3001:3001"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  db:
+    image: postgres:17-alpine
+    env_file:
+      - ./database/database.prod.env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  scheduler:
+    image: otsuge-scheduler-prod
+    build:
+      context: ./scheduler
+    env_file:
+      - ./scheduler/scheduler.prod.env
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

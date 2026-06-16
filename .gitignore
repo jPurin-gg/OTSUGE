@@ -1,0 +1,10 @@
+node_modules
+.next
+*.log
+*.env
+*.prod.env
+!.env.example
+!*.env.example
+!*.prod.env.example
+database/data/*
+!database/data/.gitkeep

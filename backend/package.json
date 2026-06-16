@@ -1,0 +1,32 @@
+{
+  "name": "otsuge-backend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0 --port 3001",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0 --port 3001",
+    "lint": "eslint .",
+    "test": "node --test --import tsx src/lib/scheduler.test.ts"
+  },
+  "dependencies": {
+    "knex": "3.2.10",
+    "next": "16.2.9",
+    "pg": "^8.16.3",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "sqlite3": "^5.1.7",
+    "web-push": "3.6.7",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@types/web-push": "^3.6.4",
+    "eslint": "^9.25.1",
+    "eslint-config-next": "16.2.9",
+    "tsx": "^4.20.6",
+    "typescript": "^5.8.3"
+  }
+}
