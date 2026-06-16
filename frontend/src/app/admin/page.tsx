@@ -115,7 +115,7 @@ export default function AdminPage() {
 
   async function generateSchedules() {
     const result = await api<{ generated: number; warnings: string[] }>("/api/admin/schedules", { method: "POST" });
-    setMessage(`今日の予定を${result.generated}件生成しました。${result.warnings.join(" ")}`);
+    setMessage(`今日のお告げを${result.generated}件つくりました。${result.warnings.join(" ")}`);
     await loadAll();
   }
 
@@ -134,7 +134,7 @@ export default function AdminPage() {
 
   async function sendNow(id: number) {
     const result = await api<{ delivered: number }>(`/api/admin/schedules/${id}/send`, { method: "POST" });
-    setMessage(`即時送信しました。配信先: ${result.delivered}件`);
+    setMessage(`今すぐ送りました。配信先: ${result.delivered}件`);
     await loadAll();
   }
 
@@ -143,7 +143,7 @@ export default function AdminPage() {
       <main className="mx-auto flex min-h-screen max-w-md items-center px-5">
         <form className="w-full rounded-3xl bg-white p-8 shadow-sm" onSubmit={login}>
           <h1 className="text-3xl font-bold">管理画面</h1>
-          <p className="mt-2 text-slate-500">管理者パスワードを入力してください。</p>
+          <p className="mt-2 text-slate-500">合言葉を入れてください。</p>
           <input
             className="mt-6 w-full rounded-2xl border border-slate-200 px-4 py-3"
             type="password"
@@ -163,14 +163,14 @@ export default function AdminPage() {
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-sm font-bold text-cyan-700">OTSUGE ADMIN</p>
-          <h1 className="text-3xl font-bold">通知管理</h1>
+          <h1 className="text-3xl font-bold">お告げ管理</h1>
         </div>
         <div className="flex gap-3">
           <button className="rounded-full bg-white px-4 py-2 font-bold shadow-sm" onClick={loadAll}>
             更新
           </button>
           <button className="rounded-full bg-slate-950 px-4 py-2 font-bold text-white" onClick={generateSchedules}>
-            今日の予定を生成
+            今日のお告げを生成
           </button>
         </div>
       </header>
@@ -178,8 +178,8 @@ export default function AdminPage() {
 
       <section className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
         <form className="rounded-3xl bg-white p-6 shadow-sm" onSubmit={saveNotification}>
-          <h2 className="text-xl font-bold">{editingNotificationId ? "通知を編集" : "通知を作成"}</h2>
-          <label className="mt-4 block text-sm font-bold">通知文</label>
+          <h2 className="text-xl font-bold">{editingNotificationId ? "お告げを編集" : "お告げを作成"}</h2>
+          <label className="mt-4 block text-sm font-bold">本文</label>
           <textarea
             className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3"
             value={notificationForm.message}
@@ -214,7 +214,7 @@ export default function AdminPage() {
                 }
               />
             </Field>
-            <Field label="最低間隔(分)">
+            <Field label="最低間隔（分）">
               <input
                 className="input"
                 type="number"
@@ -240,7 +240,7 @@ export default function AdminPage() {
         </form>
 
         <section className="rounded-3xl bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-bold">通知一覧</h2>
+          <h2 className="text-xl font-bold">お告げ一覧</h2>
           <div className="mt-4 divide-y divide-slate-100">
             {notifications.map((item) => (
               <div key={item.id} className="py-4">
@@ -285,7 +285,7 @@ export default function AdminPage() {
 
       <section className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
         <form className="rounded-3xl bg-white p-6 shadow-sm" onSubmit={saveQuietHour}>
-          <h2 className="text-xl font-bold">通知禁止時間帯</h2>
+          <h2 className="text-xl font-bold">静かにする時間</h2>
           <div className="mt-4 grid grid-cols-2 gap-3">
             <Field label="開始">
               <input
@@ -350,15 +350,15 @@ export default function AdminPage() {
         </form>
 
         <section className="rounded-3xl bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-bold">今日のスケジュール</h2>
+          <h2 className="text-xl font-bold">今日の配信予定</h2>
           <div className="mt-4 divide-y divide-slate-100">
-            {schedules.length === 0 && <p className="py-6 text-slate-500">生成済み予定はありません。</p>}
+            {schedules.length === 0 && <p className="py-6 text-slate-500">今日の予定はまだありません。</p>}
             {schedules.map((schedule) => (
               <div key={schedule.id} className="grid gap-3 py-4 md:grid-cols-[120px_1fr_auto] md:items-center">
                 <div>
                   <p className="font-mono text-lg font-bold">{formatTime(schedule.scheduled_at)}</p>
                   <p className="text-xs text-slate-500">
-                    {Boolean(schedule.sent) ? (Boolean(schedule.discarded) ? "破棄" : "送信済") : "未送信"}
+                    {Boolean(schedule.sent) ? (Boolean(schedule.discarded) ? "破棄" : "送信済み") : "未送信"}
                     {Boolean(schedule.manually_modified) ? " / 手動編集" : ""}
                   </p>
                 </div>
@@ -376,7 +376,7 @@ export default function AdminPage() {
                     className="rounded-full bg-cyan-100 px-3 py-2 text-sm font-bold text-cyan-900"
                     onClick={() => sendNow(schedule.id)}
                   >
-                    即時送信
+                    今すぐ送る
                   </button>
                   <button
                     className="rounded-full bg-red-50 px-3 py-2 text-sm font-bold text-red-700"

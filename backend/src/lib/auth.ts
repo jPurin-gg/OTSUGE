@@ -24,7 +24,7 @@ export function setAdminCookie(response: NextResponse) {
   response.cookies.set(COOKIE_NAME, token(), {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: (process.env.FRONTEND_ORIGIN ?? "").startsWith("https://"),
     maxAge: 60 * 60 * 24 * 7,
     path: "/",
   });

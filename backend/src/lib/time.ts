@@ -18,6 +18,11 @@ export function localDateKey(date = new Date()) {
   return `${value.year}-${value.month}-${value.day}`;
 }
 
+export function localMinuteOfDay(date = new Date()) {
+  const value = parts(date);
+  return Number(value.hour) * 60 + Number(value.minute);
+}
+
 export function zonedDateTimeToUtc(dateKey: string, time: string) {
   const [year, month, day] = dateKey.split("-").map(Number);
   const [hour, minute] = time.split(":").map(Number);

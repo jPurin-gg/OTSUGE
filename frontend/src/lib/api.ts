@@ -10,7 +10,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error ?? "API request failed");
+  if (!response.ok) throw new Error(data.error ?? "通信に失敗しました。");
   return data as T;
 }
 

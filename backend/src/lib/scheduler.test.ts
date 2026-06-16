@@ -19,3 +19,35 @@ test("generated times respect count, quiet hours, and minimum interval", () => {
   assert.ok(selected.every((minute) => minute < 600 || minute >= 630));
   assert.ok(selected.slice(1).every((minute, index) => minute - selected[index] >= 60));
 });
+
+test("notification end time 00:00 means end of day", () => {
+  const selected = chooseMinutes(
+    { start_time: "09:00", end_time: "00:00", count_per_day: 5, min_interval_minutes: 60 },
+    [],
+    () => 0.5,
+  );
+  assert.equal(selected.length, 5);
+  assert.ok(selected.every((minute) => minute >= 9 * 60 && minute <= 23 * 60 + 59));
+});
+
+test("generation can be limited to minutes after the current time", () => {
+  const selected = chooseMinutes(
+    { start_time: "09:00", end_time: "00:00", count_per_day: 5, min_interval_minutes: 60 },
+    [],
+    () => 0.5,
+    18 * 60 + 31,
+  );
+  assert.equal(selected.length, 5);
+  assert.ok(selected.every((minute) => minute >= 18 * 60 + 31));
+});
+
+test("generation ignores requested count when remaining slots are insufficient", () => {
+  const selected = chooseMinutes(
+    { start_time: "23:50", end_time: "00:00", count_per_day: 5, min_interval_minutes: 10 },
+    [],
+    () => 0.5,
+  );
+  assert.ok(selected.length < 5);
+  assert.ok(selected.length > 0);
+  assert.ok(selected.slice(1).every((minute, index) => minute - selected[index] >= 10));
+});

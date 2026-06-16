@@ -9,7 +9,7 @@ function urlBase64ToUint8Array(value: string) {
 
 export async function subscribePush() {
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-    throw new Error("このブラウザはPush通知に対応していません。");
+    throw new Error("このブラウザでは通知を使えません。");
   }
 
   const permission = await Notification.requestPermission();
@@ -17,7 +17,7 @@ export async function subscribePush() {
 
   const registration = await navigator.serviceWorker.register("/sw.js");
   const { publicKey } = await api<{ publicKey: string }>("/api/public/vapid-key");
-  if (!publicKey) throw new Error("VAPID公開鍵が未設定です。");
+  if (!publicKey) throw new Error("通知用の鍵がまだ設定されていません。");
 
   const subscription = await registration.pushManager.subscribe({
     userVisibleOnly: true,
