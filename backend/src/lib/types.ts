@@ -29,3 +29,16 @@ export type QuietHoursRecord = {
   created_at: string;
   updated_at: string;
 };
+
+export type DeliveryLogRecord = {
+  id: number;
+  schedule_id: number | null;
+  status: "sent" | "discarded";
+  message: string;
+  scheduled_at: string;
+  sent_at: string;
+  delivered_count: number;
+  failed_count: number;
+  removed_subscription_count: number;
+  created_at: string;
+};

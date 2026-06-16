@@ -74,6 +74,21 @@ async function initialize() {
       table.timestamp("updated_at").notNullable();
     });
   }
+
+  if (!(await db.schema.hasTable("delivery_logs"))) {
+    await db.schema.createTable("delivery_logs", (table) => {
+      table.increments("id").primary();
+      table.integer("schedule_id").references("id").inTable("schedules").onDelete("SET NULL");
+      table.string("status", 16).notNullable();
+      table.text("message").notNullable();
+      table.timestamp("scheduled_at").notNullable();
+      table.timestamp("sent_at").notNullable().index();
+      table.integer("delivered_count").notNullable().defaultTo(0);
+      table.integer("failed_count").notNullable().defaultTo(0);
+      table.integer("removed_subscription_count").notNullable().defaultTo(0);
+      table.timestamp("created_at").notNullable();
+    });
+  }
 }
 
 export async function readyDb() {

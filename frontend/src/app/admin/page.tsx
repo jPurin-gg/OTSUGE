@@ -30,6 +30,22 @@ type Schedule = {
   message: string;
 };
 
+type Stats = {
+  subscriptionCount: number;
+};
+
+type DeliveryLog = {
+  id: number;
+  schedule_id: number | null;
+  status: "sent" | "discarded";
+  message: string;
+  scheduled_at: string;
+  sent_at: string;
+  delivered_count: number;
+  failed_count: number;
+  removed_subscription_count: number;
+};
+
 type NotificationForm = Omit<NotificationItem, "id">;
 type QuietForm = Omit<QuietHour, "id">;
 
@@ -55,20 +71,26 @@ export default function AdminPage() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [quietHours, setQuietHours] = useState<QuietHour[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [stats, setStats] = useState<Stats>({ subscriptionCount: 0 });
+  const [deliveryLogs, setDeliveryLogs] = useState<DeliveryLog[]>([]);
   const [notificationForm, setNotificationForm] = useState<NotificationForm>(emptyNotification);
   const [editingNotificationId, setEditingNotificationId] = useState<number | null>(null);
   const [quietForm, setQuietForm] = useState<QuietForm>(emptyQuiet);
   const [editingQuietId, setEditingQuietId] = useState<number | null>(null);
 
   async function loadAll() {
-    const [notificationData, quietData, scheduleData] = await Promise.all([
+    const [notificationData, quietData, scheduleData, statsData, deliveryLogData] = await Promise.all([
       api<{ notifications: NotificationItem[] }>("/api/admin/notifications"),
       api<{ quietHours: QuietHour[] }>("/api/admin/quiet-hours"),
       api<{ schedules: Schedule[] }>("/api/admin/schedules"),
+      api<Stats>("/api/admin/stats"),
+      api<{ deliveryLogs: DeliveryLog[] }>("/api/admin/delivery-logs"),
     ]);
     setNotifications(notificationData.notifications);
     setQuietHours(quietData.quietHours);
     setSchedules(scheduleData.schedules);
+    setStats(statsData);
+    setDeliveryLogs(deliveryLogData.deliveryLogs);
     setLoggedIn(true);
   }
 
@@ -127,14 +149,17 @@ export default function AdminPage() {
     await loadAll();
   }
 
-  async function remove(path: string) {
+  async function remove(path: string, label: string) {
+    if (!window.confirm(`${label}を削除します。よろしいですか？`)) return;
     await api(path, { method: "DELETE" });
     await loadAll();
   }
 
   async function sendNow(id: number) {
-    const result = await api<{ delivered: number }>(`/api/admin/schedules/${id}/send`, { method: "POST" });
-    setMessage(`今すぐ送りました。配信先: ${result.delivered}件`);
+    const result = await api<{ delivered: number; failed: number; removed: number }>(`/api/admin/schedules/${id}/send`, {
+      method: "POST",
+    });
+    setMessage(`今すぐ送りました。成功: ${result.delivered}件 / 失敗: ${result.failed}件 / 購読解除: ${result.removed}件`);
     await loadAll();
   }
 
@@ -175,6 +200,12 @@ export default function AdminPage() {
         </div>
       </header>
       {message && <p className="rounded-2xl bg-cyan-50 p-4 text-sm text-cyan-900">{message}</p>}
+
+      <section className="grid gap-3 sm:grid-cols-3">
+        <StatCard label="購読者" value={`${stats.subscriptionCount}件`} />
+        <StatCard label="今日の未送信" value={`${schedules.filter((schedule) => !Boolean(schedule.sent)).length}件`} />
+        <StatCard label="最近のログ" value={`${deliveryLogs.length}件`} />
+      </section>
 
       <section className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
         <form className="rounded-3xl bg-white p-6 shadow-sm" onSubmit={saveNotification}>
@@ -271,7 +302,7 @@ export default function AdminPage() {
                     </button>
                     <button
                       className="rounded-full bg-red-50 px-3 py-1 text-sm font-bold text-red-700"
-                      onClick={() => remove(`/api/admin/notifications/${item.id}`)}
+                      onClick={() => remove(`/api/admin/notifications/${item.id}`, "お告げ")}
                     >
                       削除
                     </button>
@@ -339,7 +370,7 @@ export default function AdminPage() {
                   <button
                     type="button"
                     className="text-sm font-bold text-red-700"
-                    onClick={() => remove(`/api/admin/quiet-hours/${quiet.id}`)}
+                    onClick={() => remove(`/api/admin/quiet-hours/${quiet.id}`, "静かにする時間")}
                   >
                     削除
                   </button>
@@ -380,7 +411,7 @@ export default function AdminPage() {
                   </button>
                   <button
                     className="rounded-full bg-red-50 px-3 py-2 text-sm font-bold text-red-700"
-                    onClick={() => remove(`/api/admin/schedules/${schedule.id}`)}
+                    onClick={() => remove(`/api/admin/schedules/${schedule.id}`, "配信予定")}
                   >
                     削除
                   </button>
@@ -390,8 +421,46 @@ export default function AdminPage() {
           </div>
         </section>
       </section>
+
+      <section className="rounded-3xl bg-white p-6 shadow-sm">
+        <h2 className="text-xl font-bold">最近の送信ログ</h2>
+        <div className="mt-4 divide-y divide-slate-100">
+          {deliveryLogs.length === 0 && <p className="py-6 text-slate-500">送信ログはまだありません。</p>}
+          {deliveryLogs.map((log) => (
+            <div key={log.id} className="grid gap-3 py-4 md:grid-cols-[160px_1fr_auto] md:items-center">
+              <div>
+                <p className="font-mono text-sm font-bold">{formatTime(log.sent_at)}</p>
+                <p className="text-xs text-slate-500">予定 {formatTime(log.scheduled_at)}</p>
+              </div>
+              <div>
+                <p className="font-bold">{log.message}</p>
+                <p className="text-sm text-slate-500">
+                  成功 {log.delivered_count} / 失敗 {log.failed_count} / 購読解除 {log.removed_subscription_count}
+                </p>
+              </div>
+              <LogStatus status={log.status} />
+            </div>
+          ))}
+        </div>
+      </section>
     </main>
   );
+}
+
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <section className="rounded-3xl bg-white p-5 shadow-sm">
+      <p className="text-sm font-bold text-slate-500">{label}</p>
+      <p className="mt-2 text-3xl font-bold">{value}</p>
+    </section>
+  );
+}
+
+function LogStatus({ status }: { status: DeliveryLog["status"] }) {
+  if (status === "discarded") {
+    return <span className="w-fit rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700">破棄</span>;
+  }
+  return <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">送信済み</span>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
