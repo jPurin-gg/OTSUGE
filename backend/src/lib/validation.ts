@@ -20,3 +20,22 @@ export const quietHoursInput = z.object({
 export const scheduleInput = z.object({
   scheduled_at: z.string().datetime(),
 });
+
+export const sendInput = z.object({
+  resend: z.boolean().default(false),
+});
+
+/**
+ * 即時送信のリクエスト本文を読む。本文がなければ再送の指定なし（resend: false）として扱う。
+ * JSON として読めない本文は、そのまま検証に渡して入力エラーにする。
+ */
+export function parseSendInput(body: string) {
+  if (!body.trim()) return sendInput.parse({});
+  let data: unknown = body;
+  try {
+    data = JSON.parse(body);
+  } catch {
+    // 文字列のまま検証し、入力エラーにする。
+  }
+  return sendInput.parse(data);
+}

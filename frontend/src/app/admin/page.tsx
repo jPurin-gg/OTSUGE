@@ -1,6 +1,14 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import {
+  confirmAndSend,
+  deleteNotificationConfirmText,
+  deleteQuietHourConfirmText,
+  deleteScheduleConfirmText,
+  isResend,
+  regenerateConfirmText,
+} from "@/lib/admin-confirm";
 import { api, formatTime, toDatetimeLocal } from "@/lib/api";
 
 type NotificationItem = {
@@ -135,9 +143,11 @@ export default function AdminPage() {
     await loadAll();
   }
 
-  async function generateSchedules() {
+  // 当日の未送信の予定（手動編集を除く）を削除して引き直す。削除される件数を確認文に出す。
+  async function regenerateSchedules() {
+    if (!window.confirm(regenerateConfirmText(schedules))) return;
     const result = await api<{ generated: number; warnings: string[] }>("/api/admin/schedules", { method: "POST" });
-    setMessage(`今日のお告げを${result.generated}件つくりました。${result.warnings.join(" ")}`);
+    setMessage(`今日の予定を引き直し、新しく${result.generated}件つくりました。${result.warnings.join(" ")}`);
     await loadAll();
   }
 
@@ -149,17 +159,37 @@ export default function AdminPage() {
     await loadAll();
   }
 
-  async function remove(path: string, label: string) {
-    if (!window.confirm(`${label}を削除します。よろしいですか？`)) return;
+  // confirmText には、対象を特定できる情報と、削除で起きることを入れる（@/lib/admin-confirm でつくる）。
+  async function remove(path: string, confirmText: string) {
+    if (!window.confirm(confirmText)) return;
     await api(path, { method: "DELETE" });
     await loadAll();
   }
 
-  async function sendNow(id: number) {
-    const result = await api<{ delivered: number; failed: number; removed: number }>(`/api/admin/schedules/${id}/send`, {
-      method: "POST",
-    });
-    setMessage(`今すぐ送りました。成功: ${result.delivered}件 / 失敗: ${result.failed}件 / 購読解除: ${result.removed}件`);
+  // 全購読者に届き、取り消せないので、本文と送信先の件数を確認してから送る。
+  // 送信済み・破棄済みの予定は「再送」として送る（backend は resend の指定がないと拒否する）。
+  async function sendNow(schedule: Schedule) {
+    setMessage("");
+    try {
+      const outcome = await confirmAndSend(schedule, stats.subscriptionCount, {
+        confirm: (text) => window.confirm(text),
+        send: ({ resend }) =>
+          api<{ delivered: number; failed: number; removed: number }>(`/api/admin/schedules/${schedule.id}/send`, {
+            method: "POST",
+            body: JSON.stringify({ resend }),
+          }),
+      });
+      if (!outcome.sent) return;
+      const { delivered, failed, removed } = outcome.result;
+      setMessage(
+        `${outcome.resend ? "再送しました" : "今すぐ送りました"}。成功: ${delivered}件 / 失敗: ${failed}件 / 購読解除: ${removed}件`,
+      );
+    } catch (error) {
+      setMessage(`送信できませんでした。${error instanceof Error ? error.message : ""}`);
+      // 画面を開いている間に送信済みになっていた場合などに、最新の状態（「再送」ボタン）を表示する。
+      await loadAll().catch(() => undefined);
+      return;
+    }
     await loadAll();
   }
 
@@ -193,9 +223,6 @@ export default function AdminPage() {
         <div className="flex gap-3">
           <button className="rounded-full bg-white px-4 py-2 font-bold shadow-sm" onClick={loadAll}>
             更新
-          </button>
-          <button className="rounded-full bg-slate-950 px-4 py-2 font-bold text-white" onClick={generateSchedules}>
-            今日のお告げを生成
           </button>
         </div>
       </header>
@@ -302,7 +329,9 @@ export default function AdminPage() {
                     </button>
                     <button
                       className="rounded-full bg-red-50 px-3 py-1 text-sm font-bold text-red-700"
-                      onClick={() => remove(`/api/admin/notifications/${item.id}`, "お告げ")}
+                      onClick={() =>
+                        remove(`/api/admin/notifications/${item.id}`, deleteNotificationConfirmText(item, schedules))
+                      }
                     >
                       削除
                     </button>
@@ -370,7 +399,7 @@ export default function AdminPage() {
                   <button
                     type="button"
                     className="text-sm font-bold text-red-700"
-                    onClick={() => remove(`/api/admin/quiet-hours/${quiet.id}`, "静かにする時間")}
+                    onClick={() => remove(`/api/admin/quiet-hours/${quiet.id}`, deleteQuietHourConfirmText(quiet))}
                   >
                     削除
                   </button>
@@ -381,7 +410,17 @@ export default function AdminPage() {
         </form>
 
         <section className="rounded-3xl bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-bold">今日の配信予定</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-xl font-bold">今日の配信予定</h2>
+            {/* 読み込み直すだけの「更新」と押し間違えないよう、予定の一覧の側に置く。 */}
+            <button
+              type="button"
+              className="rounded-full border border-slate-300 px-4 py-2 text-sm font-bold"
+              onClick={regenerateSchedules}
+            >
+              今日の予定を引き直す
+            </button>
+          </div>
           <div className="mt-4 divide-y divide-slate-100">
             {schedules.length === 0 && <p className="py-6 text-slate-500">今日の予定はまだありません。</p>}
             {schedules.map((schedule) => (
@@ -403,15 +442,24 @@ export default function AdminPage() {
                   />
                 </div>
                 <div className="flex gap-2">
-                  <button
-                    className="rounded-full bg-cyan-100 px-3 py-2 text-sm font-bold text-cyan-900"
-                    onClick={() => sendNow(schedule.id)}
-                  >
-                    今すぐ送る
-                  </button>
+                  {isResend(schedule) ? (
+                    <button
+                      className="rounded-full border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700"
+                      onClick={() => sendNow(schedule)}
+                    >
+                      再送
+                    </button>
+                  ) : (
+                    <button
+                      className="rounded-full bg-cyan-100 px-3 py-2 text-sm font-bold text-cyan-900"
+                      onClick={() => sendNow(schedule)}
+                    >
+                      今すぐ送る
+                    </button>
+                  )}
                   <button
                     className="rounded-full bg-red-50 px-3 py-2 text-sm font-bold text-red-700"
-                    onClick={() => remove(`/api/admin/schedules/${schedule.id}`, "配信予定")}
+                    onClick={() => remove(`/api/admin/schedules/${schedule.id}`, deleteScheduleConfirmText(schedule))}
                   >
                     削除
                   </button>
