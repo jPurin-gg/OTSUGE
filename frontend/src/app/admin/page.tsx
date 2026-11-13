@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { api, formatTime, toDatetimeLocal } from "@/lib/api";
 import {
   END_TIME_HINT,
@@ -98,6 +98,8 @@ export default function AdminPage() {
   const [quietForm, setQuietForm] = useState<QuietForm>(emptyQuiet);
   const [editingQuietId, setEditingQuietId] = useState<number | null>(null);
   const [notificationNotice, setNotificationNotice] = useState<FormNotice | null>(null);
+  const notificationFormRef = useRef<HTMLFormElement>(null);
+  const quietFormRef = useRef<HTMLFormElement>(null);
 
   // 開始が終了より後だと1件も生成されないので、入力欄の下に理由を出して保存を止める。
   const notificationTimeProblem = notificationTimeError(notificationForm);
@@ -173,6 +175,27 @@ export default function AdminPage() {
     await loadAll();
   }
 
+  function editNotification(item: NotificationItem) {
+    setEditingNotificationId(item.id);
+    setNotificationForm({
+      message: item.message,
+      start_time: item.start_time,
+      end_time: item.end_time,
+      count_per_day: item.count_per_day,
+      min_interval_minutes: item.min_interval_minutes,
+      enabled: Boolean(item.enabled),
+    });
+    setNotificationNotice(null);
+    // スマホではフォームが一覧より上にあるので、編集中になったフォームまで戻す。
+    notificationFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function cancelNotificationEdit() {
+    setNotificationForm(emptyNotification);
+    setEditingNotificationId(null);
+    setNotificationNotice(null);
+  }
+
   // このお告げだけ、今日の予定を現在の設定で引き直す。未送信の予定が削除されるときは件数を確認する。
   async function redrawNotification(item: NotificationItem) {
     if (redrawRemovableCount(item, schedules) > 0 && !window.confirm(redrawConfirmText(item, schedules))) return;
@@ -204,6 +227,21 @@ export default function AdminPage() {
     setQuietForm(emptyQuiet);
     setEditingQuietId(null);
     await loadAll();
+  }
+
+  function editQuietHour(quiet: QuietHour) {
+    setEditingQuietId(quiet.id);
+    setQuietForm({
+      start_time: quiet.start_time,
+      end_time: quiet.end_time,
+      enabled: Boolean(quiet.enabled),
+    });
+    quietFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function cancelQuietEdit() {
+    setQuietForm(emptyQuiet);
+    setEditingQuietId(null);
   }
 
   async function generateSchedules() {
@@ -282,7 +320,11 @@ export default function AdminPage() {
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
-        <form className="rounded-3xl bg-white p-6 shadow-sm" onSubmit={saveNotification}>
+        <form
+          ref={notificationFormRef}
+          className={`scroll-mt-4 rounded-3xl bg-white p-6 shadow-sm ${editingNotificationId ? "ring-2 ring-cyan-400" : ""}`}
+          onSubmit={saveNotification}
+        >
           <h2 className="text-xl font-bold">{editingNotificationId ? "お告げを編集" : "お告げを作成"}</h2>
           <label className="mt-4 block text-sm font-bold">本文</label>
           <textarea
@@ -348,12 +390,23 @@ export default function AdminPage() {
           <p className="mt-1 text-xs text-slate-500">
             無効にすると、今日の未送信の予定も送りません。有効に戻すと、残っている予定は送られます。
           </p>
-          <button
-            className="mt-5 rounded-2xl bg-slate-950 px-5 py-3 font-bold text-white disabled:opacity-40"
-            disabled={Boolean(notificationTimeProblem)}
-          >
-            {editingNotificationId ? "更新" : "追加"}
-          </button>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <button
+              className="rounded-2xl bg-slate-950 px-5 py-3 font-bold text-white disabled:opacity-40"
+              disabled={Boolean(notificationTimeProblem)}
+            >
+              {editingNotificationId ? "更新" : "追加"}
+            </button>
+            {editingNotificationId && (
+              <button
+                type="button"
+                className="rounded-2xl border border-slate-300 px-5 py-3 font-bold"
+                onClick={cancelNotificationEdit}
+              >
+                キャンセル
+              </button>
+            )}
+          </div>
           {notificationNotice && (
             <div
               role={notificationNotice.tone === "error" ? "alert" : "status"}
@@ -379,10 +432,21 @@ export default function AdminPage() {
           <h2 className="text-xl font-bold">お告げ一覧</h2>
           <div className="mt-4 divide-y divide-slate-100">
             {notifications.map((item) => (
-              <div key={item.id} className="py-4">
+              <div
+                key={item.id}
+                className={
+                  editingNotificationId === item.id
+                    ? "-mx-3 rounded-2xl bg-cyan-50 px-3 py-4 ring-2 ring-cyan-400"
+                    : "py-4"
+                }
+                aria-current={editingNotificationId === item.id ? "true" : undefined}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="font-bold">{item.message}</p>
+                    <p className="font-bold">
+                      {item.message}
+                      {editingNotificationId === item.id && <EditingBadge />}
+                    </p>
                     <p className="text-sm text-slate-500">
                       {item.start_time}-{item.end_time} / {item.count_per_day}回 / {item.min_interval_minutes}分間隔 /{" "}
                       {Boolean(item.enabled) ? "有効" : "無効"}
@@ -401,17 +465,7 @@ export default function AdminPage() {
                     )}
                     <button
                       className="rounded-full bg-slate-100 px-3 py-1 text-sm font-bold"
-                      onClick={() => {
-                        setEditingNotificationId(item.id);
-                        setNotificationForm({
-                          message: item.message,
-                          start_time: item.start_time,
-                          end_time: item.end_time,
-                          count_per_day: item.count_per_day,
-                          min_interval_minutes: item.min_interval_minutes,
-                          enabled: Boolean(item.enabled),
-                        });
-                      }}
+                      onClick={() => editNotification(item)}
                     >
                       編集
                     </button>
@@ -430,8 +484,12 @@ export default function AdminPage() {
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
-        <form className="rounded-3xl bg-white p-6 shadow-sm" onSubmit={saveQuietHour}>
-          <h2 className="text-xl font-bold">静かにする時間</h2>
+        <form
+          ref={quietFormRef}
+          className={`scroll-mt-4 rounded-3xl bg-white p-6 shadow-sm ${editingQuietId ? "ring-2 ring-cyan-400" : ""}`}
+          onSubmit={saveQuietHour}
+        >
+          <h2 className="text-xl font-bold">{editingQuietId ? "静かにする時間を編集" : "静かにする時間"}</h2>
           <div className="mt-4 grid grid-cols-2 gap-3">
             <Field label="開始">
               <input
@@ -464,29 +522,36 @@ export default function AdminPage() {
             />
             有効
           </label>
-          <button className="mt-5 rounded-2xl bg-slate-950 px-5 py-3 font-bold text-white">
-            {editingQuietId ? "更新" : "追加"}
-          </button>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <button className="rounded-2xl bg-slate-950 px-5 py-3 font-bold text-white">
+              {editingQuietId ? "更新" : "追加"}
+            </button>
+            {editingQuietId && (
+              <button
+                type="button"
+                className="rounded-2xl border border-slate-300 px-5 py-3 font-bold"
+                onClick={cancelQuietEdit}
+              >
+                キャンセル
+              </button>
+            )}
+          </div>
           <div className="mt-4 space-y-2">
             {quietHours.map((quiet) => (
-              <div key={quiet.id} className="flex items-center justify-between rounded-2xl bg-slate-50 p-3">
+              <div
+                key={quiet.id}
+                className={`flex items-center justify-between rounded-2xl p-3 ${
+                  editingQuietId === quiet.id ? "bg-cyan-50 ring-2 ring-cyan-400" : "bg-slate-50"
+                }`}
+                aria-current={editingQuietId === quiet.id ? "true" : undefined}
+              >
                 <span>
                   {quiet.start_time}-{quiet.end_time}
                   {isAllDayQuietHours(quiet) ? "（終日）" : ""} / {Boolean(quiet.enabled) ? "有効" : "無効"}
+                  {editingQuietId === quiet.id && <EditingBadge />}
                 </span>
                 <span className="flex gap-2">
-                  <button
-                    type="button"
-                    className="text-sm font-bold"
-                    onClick={() => {
-                      setEditingQuietId(quiet.id);
-                      setQuietForm({
-                        start_time: quiet.start_time,
-                        end_time: quiet.end_time,
-                        enabled: Boolean(quiet.enabled),
-                      });
-                    }}
-                  >
+                  <button type="button" className="text-sm font-bold" onClick={() => editQuietHour(quiet)}>
                     編集
                   </button>
                   <button
@@ -595,6 +660,10 @@ function LogStatus({ status }: { status: DeliveryLog["status"] }) {
     return <span className="w-fit rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700">破棄</span>;
   }
   return <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">送信済み</span>;
+}
+
+function EditingBadge() {
+  return <span className="ml-2 rounded-full bg-cyan-900 px-2 py-0.5 text-xs text-white">編集中</span>;
 }
 
 function TodayBadge({ status }: { status: TodayStatus }) {
