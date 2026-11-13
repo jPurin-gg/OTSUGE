@@ -1,4 +1,4 @@
-const timezone = () => process.env.APP_TIMEZONE ?? "Asia/Tokyo";
+const timezone = () => process.env.APP_TIMEZONE || "Asia/Tokyo";
 
 function parts(date: Date) {
   const values = new Intl.DateTimeFormat("en-CA", {

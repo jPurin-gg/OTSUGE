@@ -35,6 +35,9 @@ export function clearAdminCookie(response: NextResponse) {
 }
 
 export function checkInternal(request: NextRequest) {
-  const expected = process.env.CRON_SECRET ?? "";
-  return Boolean(expected) && request.headers.get("authorization") === `Bearer ${expected}`;
+  const expected = process.env.CRON_SECRET;
+  if (!expected) {
+    throw new Error("内部API認証の必須環境変数が未設定または空です: CRON_SECRET");
+  }
+  return request.headers.get("authorization") === `Bearer ${expected}`;
 }

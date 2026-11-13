@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 function corsHeaders(origin: string | null) {
-  const allowed = (process.env.FRONTEND_ORIGIN ?? "http://localhost:3000")
+  const allowed = (process.env.FRONTEND_ORIGIN || "http://localhost:3000")
     .split(",")
     .map((value) => value.trim());
   const allowOrigin = origin && allowed.includes(origin) ? origin : allowed[0];

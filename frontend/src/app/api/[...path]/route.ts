@@ -4,7 +4,7 @@ type Context = { params: Promise<{ path: string[] }> };
 
 async function proxy(request: NextRequest, context: Context) {
   const { path } = await context.params;
-  const target = new URL(`/api/${path.join("/")}`, process.env.BACKEND_URL ?? "http://backend:3001");
+  const target = new URL(`/api/${path.join("/")}`, process.env.BACKEND_URL || "http://backend:3001");
   target.search = request.nextUrl.search;
 
   const headers = new Headers(request.headers);

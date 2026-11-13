@@ -1,32 +1,14 @@
 import knex, { Knex } from "knex";
+import { getDatabaseConfig } from "./db-config";
 
 declare global {
   var otsugeDb: Knex | undefined;
   var otsugeDbReady: Promise<void> | undefined;
 }
 
-function createDb() {
-  if ((process.env.DB_CLIENT ?? "sqlite") === "postgres") {
-    return knex({
-      client: "pg",
-      connection: process.env.DATABASE_URL,
-      pool: { min: 1, max: 10 },
-    });
-  }
+let database = global.otsugeDb;
 
-  return knex({
-    client: "sqlite3",
-    connection: {
-      filename: process.env.SQLITE_PATH ?? "/data/otsuge.sqlite3",
-    },
-    useNullAsDefault: true,
-  });
-}
-
-export const db = global.otsugeDb ?? createDb();
-if (process.env.NODE_ENV !== "production") global.otsugeDb = db;
-
-async function initialize() {
+async function initialize(db: Knex) {
   if (!(await db.schema.hasTable("notifications"))) {
     await db.schema.createTable("notifications", (table) => {
       table.increments("id").primary();
@@ -92,7 +74,9 @@ async function initialize() {
 }
 
 export async function readyDb() {
-  global.otsugeDbReady ??= initialize();
+  database ??= knex(getDatabaseConfig());
+  if (process.env.NODE_ENV !== "production") global.otsugeDb = database;
+  global.otsugeDbReady ??= initialize(database);
   await global.otsugeDbReady;
-  return db;
+  return database;
 }
