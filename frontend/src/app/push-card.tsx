@@ -1,4 +1,5 @@
 import type { PushCardView } from "@/lib/push-state";
+import { InstallButton } from "./install-button";
 
 type Props = {
   view: PushCardView;
@@ -30,6 +31,8 @@ export function PushCard({ view, loading, message, onSubscribe, onUnsubscribe }:
             </ol>
           )}
           {view.note && <p className="mt-3 max-w-xl text-xs leading-5 text-slate-400">{view.note}</p>}
+          {/* iOS のホーム画面追加は上の手順で案内する。それ以外で、ブラウザがインストールできると知らせたときだけ出る。 */}
+          {view.state !== "needs-install" && <InstallButton />}
         </div>
         {showActions && (
           <div className="flex flex-wrap gap-2">
