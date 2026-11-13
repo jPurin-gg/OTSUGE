@@ -44,6 +44,9 @@ export async function unsubscribePush() {
 }
 
 export async function getSubscriptionStatus() {
+  // http でのアクセスや Service Worker 非対応のブラウザには navigator.serviceWorker がない。
+  // 購読はできないので、例外にせず未購読として扱う。Push 非対応で pushManager がない場合も同じ。
+  if (!navigator.serviceWorker) return false;
   const registration = await navigator.serviceWorker.getRegistration();
-  return Boolean(await registration?.pushManager.getSubscription());
+  return Boolean(await registration?.pushManager?.getSubscription());
 }
