@@ -47,6 +47,8 @@ docker compose -f compose.prod.yaml up --build -d
 本番では `database/database.prod.env` のPostgreSQL設定を使います。
 管理画面の本番パスワードは `backend/backend.prod.env` の `ADMIN_PASSWORD` です。
 
+バックエンドでは `ADMIN_PASSWORD` と `AUTH_SECRET` の両方が必須です。`AUTH_SECRET` には十分に長いランダムな秘密値を設定してください。どちらかが未設定または空文字の場合は起動時の検証で失敗し、管理者ログイン・管理 API の Cookie 認証も拒否します。エラーには不足する環境変数名のみを表示し、値は表示しません。
+
 ## 環境変数ファイル
 
 `.env` / `.prod.env` 相当の実値入りファイルはGit管理しません。Gitには `*.env.example` / `*.prod.env.example` だけを含めます。

@@ -1,17 +1,26 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { getAdminAuthConfig } from "./auth-config";
+
+export { getAdminAuthConfig } from "./auth-config";
 
 const COOKIE_NAME = "otsuge_admin";
 
 function token() {
+  const { password, secret } = getAdminAuthConfig();
   return createHash("sha256")
-    .update(`${process.env.ADMIN_PASSWORD ?? ""}:${process.env.AUTH_SECRET ?? ""}`)
+    .update(`${password}:${secret}`)
     .digest("hex");
 }
 
 export function isAdmin(request: NextRequest) {
+  let expected: string;
+  try {
+    expected = token();
+  } catch {
+    return false;
+  }
   const actual = request.cookies.get(COOKIE_NAME)?.value ?? "";
-  const expected = token();
   if (actual.length !== expected.length) return false;
   return timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
 }
