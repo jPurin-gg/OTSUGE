@@ -19,8 +19,8 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.registration.showNotification(data.title || "OTSUGE", {
       body: data.body || "通知です。",
-      icon: "/icon.svg",
-      badge: "/icon.svg",
+      icon: "/icon-192.png",
+      badge: "/notification-badge.png",
       data: { url: data.url || "/" },
       tag: data.tag,
     }),
