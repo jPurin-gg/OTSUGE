@@ -6,9 +6,13 @@ import { notificationInput } from "@/lib/validation";
 
 export async function GET(request: NextRequest) {
   if (!isAdmin(request)) return unauthorized();
-  const database = await readyDb();
-  const rows = await database("notifications").select("*").orderBy("id", "desc");
-  return json({ notifications: rows });
+  try {
+    const database = await readyDb();
+    const rows = await database("notifications").select("*").orderBy("id", "desc");
+    return json({ notifications: rows });
+  } catch (error) {
+    return handleError(error);
+  }
 }
 
 export async function POST(request: NextRequest) {

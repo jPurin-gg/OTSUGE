@@ -6,9 +6,13 @@ import { quietHoursInput } from "@/lib/validation";
 
 export async function GET(request: NextRequest) {
   if (!isAdmin(request)) return unauthorized();
-  const database = await readyDb();
-  const rows = await database("quiet_hours").select("*").orderBy("id", "asc");
-  return json({ quietHours: rows });
+  try {
+    const database = await readyDb();
+    const rows = await database("quiet_hours").select("*").orderBy("id", "asc");
+    return json({ quietHours: rows });
+  } catch (error) {
+    return handleError(error);
+  }
 }
 
 export async function POST(request: NextRequest) {
