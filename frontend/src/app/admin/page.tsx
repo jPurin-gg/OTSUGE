@@ -1,7 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { api, formatTime, toDatetimeLocal } from "@/lib/api";
+import { ActionResult, createActionRunner, Notice } from "@/lib/admin-action";
+import { api, describeError, formatTime, isUnauthorized, toDatetimeLocal } from "@/lib/api";
 
 type NotificationItem = {
   id: number;
@@ -64,10 +65,16 @@ const emptyQuiet: QuietForm = {
   enabled: true,
 };
 
+type AuthState = "checking" | "loggedOut" | "loggedIn";
+
+// 処理中に無効化したボタンの見た目。
+const disabledStyle = "disabled:cursor-not-allowed disabled:opacity-50";
+
 export default function AdminPage() {
   const [password, setPassword] = useState("");
-  const [loggedIn, setLoggedIn] = useState(false);
-  const [message, setMessage] = useState("");
+  const [auth, setAuth] = useState<AuthState>("checking");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [quietHours, setQuietHours] = useState<QuietHour[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
@@ -77,93 +84,200 @@ export default function AdminPage() {
   const [editingNotificationId, setEditingNotificationId] = useState<number | null>(null);
   const [quietForm, setQuietForm] = useState<QuietForm>(emptyQuiet);
   const [editingQuietId, setEditingQuietId] = useState<number | null>(null);
+  // state の setter は再レンダーをまたいで同一なので、runner は最初の1回だけ作る。
+  const [run] = useState(() =>
+    createActionRunner({
+      setBusy,
+      setNotice,
+      onSessionExpired: (reason) => {
+        // フォームの入力内容は残したままログイン画面に戻す。
+        setAuth("loggedOut");
+        setNotice({ kind: "error", text: reason });
+      },
+    }),
+  );
 
+  // 5つの API を読み込み、成功したものは反映する。失敗があれば 401 を優先して投げる。
   async function loadAll() {
-    const [notificationData, quietData, scheduleData, statsData, deliveryLogData] = await Promise.all([
+    const results = await Promise.allSettled([
       api<{ notifications: NotificationItem[] }>("/api/admin/notifications"),
       api<{ quietHours: QuietHour[] }>("/api/admin/quiet-hours"),
       api<{ schedules: Schedule[] }>("/api/admin/schedules"),
       api<Stats>("/api/admin/stats"),
       api<{ deliveryLogs: DeliveryLog[] }>("/api/admin/delivery-logs"),
     ]);
-    setNotifications(notificationData.notifications);
-    setQuietHours(quietData.quietHours);
-    setSchedules(scheduleData.schedules);
-    setStats(statsData);
-    setDeliveryLogs(deliveryLogData.deliveryLogs);
-    setLoggedIn(true);
+    const [notificationData, quietData, scheduleData, statsData, deliveryLogData] = results;
+    if (notificationData.status === "fulfilled") setNotifications(notificationData.value.notifications);
+    if (quietData.status === "fulfilled") setQuietHours(quietData.value.quietHours);
+    if (scheduleData.status === "fulfilled") setSchedules(scheduleData.value.schedules);
+    if (statsData.status === "fulfilled") setStats(statsData.value);
+    if (deliveryLogData.status === "fulfilled") setDeliveryLogs(deliveryLogData.value.deliveryLogs);
+    const failures = results.flatMap((result) => (result.status === "rejected" ? [result.reason as unknown] : []));
+    if (failures.length > 0) throw failures.find(isUnauthorized) ?? failures[0];
+  }
+
+  // 変更系の操作のあとに一覧を読み直す。変更自体は成功しているので、読み直しの失敗は「失敗」と区別して伝える。
+  async function reloadAfter(successText: string): Promise<ActionResult> {
+    try {
+      await loadAll();
+      return successText;
+    } catch (error) {
+      if (isUnauthorized(error)) throw error;
+      return {
+        kind: "error",
+        text: `${successText}\nただし、最新の状態を読み込めませんでした。「更新」を押してください。\n${describeError(error)}`,
+      };
+    }
   }
 
   useEffect(() => {
+    // ログイン判定は 401 かどうかだけで行う。401 以外の失敗はログイン済みとして画面を出し、エラーを表示する。
+    let active = true;
     // Initial admin state is loaded from the backend.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadAll().catch(() => setLoggedIn(false));
+    loadAll().then(
+      () => {
+        if (active) setAuth("loggedIn");
+      },
+      (error: unknown) => {
+        if (!active) return;
+        if (isUnauthorized(error)) {
+          setAuth("loggedOut");
+          return;
+        }
+        setAuth("loggedIn");
+        setNotice({
+          kind: "error",
+          text: `読み込みに失敗しました。「更新」を押して読み込み直してください。\n${describeError(error)}`,
+        });
+      },
+    );
+    return () => {
+      active = false;
+    };
   }, []);
 
   async function login(event: FormEvent) {
     event.preventDefault();
-    setMessage("");
-    try {
+    // ここでの 401 は合言葉の誤りなので、セッション切れとしては扱わない。
+    const loggedIn = await run({ label: "ログイン", sessionExpiryOn401: false }, async () => {
       await api("/api/admin/login", { method: "POST", body: JSON.stringify({ password }) });
+      setPassword("");
+    });
+    if (!loggedIn) return;
+    setAuth("loggedIn");
+    await run({ label: "読み込み" }, async () => {
       await loadAll();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "ログインできませんでした。");
-    }
+    });
+  }
+
+  async function logout() {
+    await run({ label: "ログアウト" }, async () => {
+      await api("/api/admin/logout", { method: "POST" });
+      setAuth("loggedOut");
+      setNotifications([]);
+      setQuietHours([]);
+      setSchedules([]);
+      setStats({ subscriptionCount: 0 });
+      setDeliveryLogs([]);
+      setNotificationForm(emptyNotification);
+      setEditingNotificationId(null);
+      setQuietForm(emptyQuiet);
+      setEditingQuietId(null);
+      return "ログアウトしました。";
+    });
+  }
+
+  async function refresh() {
+    await run({ label: "読み込み" }, async () => {
+      await loadAll();
+      return "最新の状態にしました。";
+    });
   }
 
   async function saveNotification(event: FormEvent) {
     event.preventDefault();
-    const path = editingNotificationId ? `/api/admin/notifications/${editingNotificationId}` : "/api/admin/notifications";
-    await api(path, {
-      method: editingNotificationId ? "PUT" : "POST",
-      body: JSON.stringify(notificationForm),
+    const editingId = editingNotificationId;
+    await run({ label: editingId ? "お告げの更新" : "お告げの追加" }, async () => {
+      const path = editingId ? `/api/admin/notifications/${editingId}` : "/api/admin/notifications";
+      await api(path, {
+        method: editingId ? "PUT" : "POST",
+        body: JSON.stringify(notificationForm),
+      });
+      // 入力内容を消すのは保存に成功したときだけ。
+      setNotificationForm(emptyNotification);
+      setEditingNotificationId(null);
+      return reloadAfter(editingId ? "お告げを更新しました。" : "お告げを追加しました。");
     });
-    setNotificationForm(emptyNotification);
-    setEditingNotificationId(null);
-    await loadAll();
   }
 
   async function saveQuietHour(event: FormEvent) {
     event.preventDefault();
-    const path = editingQuietId ? `/api/admin/quiet-hours/${editingQuietId}` : "/api/admin/quiet-hours";
-    await api(path, {
-      method: editingQuietId ? "PUT" : "POST",
-      body: JSON.stringify(quietForm),
+    const editingId = editingQuietId;
+    await run({ label: editingId ? "静かにする時間の更新" : "静かにする時間の追加" }, async () => {
+      const path = editingId ? `/api/admin/quiet-hours/${editingId}` : "/api/admin/quiet-hours";
+      await api(path, {
+        method: editingId ? "PUT" : "POST",
+        body: JSON.stringify(quietForm),
+      });
+      setQuietForm(emptyQuiet);
+      setEditingQuietId(null);
+      return reloadAfter(editingId ? "静かにする時間を更新しました。" : "静かにする時間を追加しました。");
     });
-    setQuietForm(emptyQuiet);
-    setEditingQuietId(null);
-    await loadAll();
   }
 
   async function generateSchedules() {
-    const result = await api<{ generated: number; warnings: string[] }>("/api/admin/schedules", { method: "POST" });
-    setMessage(`今日のお告げを${result.generated}件つくりました。${result.warnings.join(" ")}`);
-    await loadAll();
+    await run({ label: "今日のお告げの生成" }, async () => {
+      const result = await api<{ generated: number; warnings: string[] }>("/api/admin/schedules", { method: "POST" });
+      return reloadAfter([`今日のお告げを${result.generated}件つくりました。`, ...result.warnings].join("\n"));
+    });
   }
 
-  async function updateSchedule(id: number, value: string) {
-    await api(`/api/admin/schedules/${id}`, {
-      method: "PUT",
-      body: JSON.stringify({ scheduled_at: new Date(value).toISOString() }),
+  async function updateSchedule(id: number, value: string, current: string) {
+    // 値を変えずに欄を離れただけなら送らない（手動編集扱いにしない）。
+    if (value === current) return;
+    await run({ label: "配信時刻の変更" }, async () => {
+      const date = new Date(value);
+      if (!value || Number.isNaN(date.getTime())) throw new Error("配信時刻を正しく入力してください。");
+      await api(`/api/admin/schedules/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ scheduled_at: date.toISOString() }),
+      });
+      return reloadAfter("配信時刻を変更しました。");
     });
-    await loadAll();
   }
 
   async function remove(path: string, label: string) {
+    if (busy) return;
     if (!window.confirm(`${label}を削除します。よろしいですか？`)) return;
-    await api(path, { method: "DELETE" });
-    await loadAll();
+    await run({ label: `${label}の削除` }, async () => {
+      await api(path, { method: "DELETE" });
+      return reloadAfter(`${label}を削除しました。`);
+    });
   }
 
   async function sendNow(id: number) {
-    const result = await api<{ delivered: number; failed: number; removed: number }>(`/api/admin/schedules/${id}/send`, {
-      method: "POST",
+    await run({ label: "今すぐ送る" }, async () => {
+      const result = await api<{ delivered: number; failed: number; removed: number }>(`/api/admin/schedules/${id}/send`, {
+        method: "POST",
+      });
+      return reloadAfter(
+        `今すぐ送りました。成功: ${result.delivered}件 / 失敗: ${result.failed}件 / 購読解除: ${result.removed}件`,
+      );
     });
-    setMessage(`今すぐ送りました。成功: ${result.delivered}件 / 失敗: ${result.failed}件 / 購読解除: ${result.removed}件`);
-    await loadAll();
   }
 
-  if (!loggedIn) {
+  if (auth === "checking") {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-md items-center justify-center px-5">
+        <p className="text-slate-500" role="status">
+          確認中…
+        </p>
+      </main>
+    );
+  }
+
+  if (auth === "loggedOut") {
     return (
       <main className="mx-auto flex min-h-screen max-w-md items-center px-5">
         <form className="w-full rounded-3xl bg-white p-8 shadow-sm" onSubmit={login}>
@@ -176,30 +290,55 @@ export default function AdminPage() {
             onChange={(event) => setPassword(event.target.value)}
             placeholder="ADMIN_PASSWORD"
           />
-          <button className="mt-4 w-full rounded-2xl bg-slate-950 px-4 py-3 font-bold text-white">ログイン</button>
-          {message && <p className="mt-4 text-sm text-red-600">{message}</p>}
+          <button
+            className={`mt-4 w-full rounded-2xl bg-slate-950 px-4 py-3 font-bold text-white ${disabledStyle}`}
+            disabled={busy}
+          >
+            {busy ? "ログイン中…" : "ログイン"}
+          </button>
+          {notice && <NoticeBanner className="mt-4" notice={notice} onClose={() => setNotice(null)} />}
         </form>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto flex max-w-6xl flex-col gap-6 px-5 py-8">
+    <main className="mx-auto flex max-w-6xl flex-col gap-6 px-5 py-8" aria-busy={busy}>
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-sm font-bold text-cyan-700">OTSUGE ADMIN</p>
           <h1 className="text-3xl font-bold">お告げ管理</h1>
         </div>
-        <div className="flex gap-3">
-          <button className="rounded-full bg-white px-4 py-2 font-bold shadow-sm" onClick={loadAll}>
+        <div className="flex flex-wrap gap-3">
+          <button
+            className={`rounded-full bg-white px-4 py-2 font-bold shadow-sm ${disabledStyle}`}
+            onClick={refresh}
+            disabled={busy}
+          >
             更新
           </button>
-          <button className="rounded-full bg-slate-950 px-4 py-2 font-bold text-white" onClick={generateSchedules}>
+          <button
+            className={`rounded-full bg-slate-950 px-4 py-2 font-bold text-white ${disabledStyle}`}
+            onClick={generateSchedules}
+            disabled={busy}
+          >
             今日のお告げを生成
+          </button>
+          <button
+            className={`rounded-full bg-white px-4 py-2 font-bold text-slate-600 shadow-sm ${disabledStyle}`}
+            onClick={logout}
+            disabled={busy}
+          >
+            ログアウト
           </button>
         </div>
       </header>
-      {message && <p className="rounded-2xl bg-cyan-50 p-4 text-sm text-cyan-900">{message}</p>}
+      {busy && (
+        <p className="text-sm text-slate-500" role="status">
+          処理中…
+        </p>
+      )}
+      {notice && <NoticeBanner notice={notice} onClose={() => setNotice(null)} />}
 
       <section className="grid gap-3 sm:grid-cols-3">
         <StatCard label="購読者" value={`${stats.subscriptionCount}件`} />
@@ -215,6 +354,7 @@ export default function AdminPage() {
             className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3"
             value={notificationForm.message}
             onChange={(event) => setNotificationForm({ ...notificationForm, message: event.target.value })}
+            maxLength={200}
             required
           />
           <div className="mt-4 grid grid-cols-2 gap-3">
@@ -224,6 +364,7 @@ export default function AdminPage() {
                 type="time"
                 value={notificationForm.start_time}
                 onChange={(event) => setNotificationForm({ ...notificationForm, start_time: event.target.value })}
+                required
               />
             </Field>
             <Field label="終了">
@@ -232,6 +373,7 @@ export default function AdminPage() {
                 type="time"
                 value={notificationForm.end_time}
                 onChange={(event) => setNotificationForm({ ...notificationForm, end_time: event.target.value })}
+                required
               />
             </Field>
             <Field label="1日の回数">
@@ -239,6 +381,7 @@ export default function AdminPage() {
                 className="input"
                 type="number"
                 min="1"
+                max="100"
                 value={notificationForm.count_per_day}
                 onChange={(event) =>
                   setNotificationForm({ ...notificationForm, count_per_day: Number(event.target.value) })
@@ -250,6 +393,7 @@ export default function AdminPage() {
                 className="input"
                 type="number"
                 min="0"
+                max="1440"
                 value={notificationForm.min_interval_minutes}
                 onChange={(event) =>
                   setNotificationForm({ ...notificationForm, min_interval_minutes: Number(event.target.value) })
@@ -265,7 +409,7 @@ export default function AdminPage() {
             />
             有効
           </label>
-          <button className="mt-5 rounded-2xl bg-slate-950 px-5 py-3 font-bold text-white">
+          <button className={`mt-5 rounded-2xl bg-slate-950 px-5 py-3 font-bold text-white ${disabledStyle}`} disabled={busy}>
             {editingNotificationId ? "更新" : "追加"}
           </button>
         </form>
@@ -285,7 +429,8 @@ export default function AdminPage() {
                   </div>
                   <div className="flex shrink-0 gap-2">
                     <button
-                      className="rounded-full bg-slate-100 px-3 py-1 text-sm font-bold"
+                      className={`rounded-full bg-slate-100 px-3 py-1 text-sm font-bold ${disabledStyle}`}
+                      disabled={busy}
                       onClick={() => {
                         setEditingNotificationId(item.id);
                         setNotificationForm({
@@ -301,7 +446,8 @@ export default function AdminPage() {
                       編集
                     </button>
                     <button
-                      className="rounded-full bg-red-50 px-3 py-1 text-sm font-bold text-red-700"
+                      className={`rounded-full bg-red-50 px-3 py-1 text-sm font-bold text-red-700 ${disabledStyle}`}
+                      disabled={busy}
                       onClick={() => remove(`/api/admin/notifications/${item.id}`, "お告げ")}
                     >
                       削除
@@ -324,6 +470,7 @@ export default function AdminPage() {
                 type="time"
                 value={quietForm.start_time}
                 onChange={(event) => setQuietForm({ ...quietForm, start_time: event.target.value })}
+                required
               />
             </Field>
             <Field label="終了">
@@ -332,6 +479,7 @@ export default function AdminPage() {
                 type="time"
                 value={quietForm.end_time}
                 onChange={(event) => setQuietForm({ ...quietForm, end_time: event.target.value })}
+                required
               />
             </Field>
           </div>
@@ -343,7 +491,7 @@ export default function AdminPage() {
             />
             有効
           </label>
-          <button className="mt-5 rounded-2xl bg-slate-950 px-5 py-3 font-bold text-white">
+          <button className={`mt-5 rounded-2xl bg-slate-950 px-5 py-3 font-bold text-white ${disabledStyle}`} disabled={busy}>
             {editingQuietId ? "更新" : "追加"}
           </button>
           <div className="mt-4 space-y-2">
@@ -355,7 +503,8 @@ export default function AdminPage() {
                 <span className="flex gap-2">
                   <button
                     type="button"
-                    className="text-sm font-bold"
+                    className={`text-sm font-bold ${disabledStyle}`}
+                    disabled={busy}
                     onClick={() => {
                       setEditingQuietId(quiet.id);
                       setQuietForm({
@@ -369,7 +518,8 @@ export default function AdminPage() {
                   </button>
                   <button
                     type="button"
-                    className="text-sm font-bold text-red-700"
+                    className={`text-sm font-bold text-red-700 ${disabledStyle}`}
+                    disabled={busy}
                     onClick={() => remove(`/api/admin/quiet-hours/${quiet.id}`, "静かにする時間")}
                   >
                     削除
@@ -399,18 +549,22 @@ export default function AdminPage() {
                     className="mt-2 rounded-xl border border-slate-200 px-3 py-2"
                     type="datetime-local"
                     defaultValue={toDatetimeLocal(schedule.scheduled_at)}
-                    onBlur={(event) => updateSchedule(schedule.id, event.target.value)}
+                    onBlur={(event) =>
+                      updateSchedule(schedule.id, event.target.value, toDatetimeLocal(schedule.scheduled_at))
+                    }
                   />
                 </div>
                 <div className="flex gap-2">
                   <button
-                    className="rounded-full bg-cyan-100 px-3 py-2 text-sm font-bold text-cyan-900"
+                    className={`rounded-full bg-cyan-100 px-3 py-2 text-sm font-bold text-cyan-900 ${disabledStyle}`}
+                    disabled={busy}
                     onClick={() => sendNow(schedule.id)}
                   >
                     今すぐ送る
                   </button>
                   <button
-                    className="rounded-full bg-red-50 px-3 py-2 text-sm font-bold text-red-700"
+                    className={`rounded-full bg-red-50 px-3 py-2 text-sm font-bold text-red-700 ${disabledStyle}`}
+                    disabled={busy}
                     onClick={() => remove(`/api/admin/schedules/${schedule.id}`, "配信予定")}
                   >
                     削除
@@ -444,6 +598,29 @@ export default function AdminPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+function NoticeBanner({
+  notice,
+  onClose,
+  className = "",
+}: {
+  notice: Notice;
+  onClose: () => void;
+  className?: string;
+}) {
+  const tone = notice.kind === "error" ? "bg-red-50 text-red-800" : "bg-cyan-50 text-cyan-900";
+  return (
+    <div
+      className={`flex items-start justify-between gap-3 rounded-2xl p-4 text-sm ${tone} ${className}`}
+      role={notice.kind === "error" ? "alert" : "status"}
+    >
+      <p className="whitespace-pre-line">{notice.text}</p>
+      <button type="button" className="shrink-0 font-bold opacity-70 hover:opacity-100" onClick={onClose}>
+        閉じる
+      </button>
+    </div>
   );
 }
 
