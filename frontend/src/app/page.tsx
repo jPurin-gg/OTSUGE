@@ -2,35 +2,64 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import { api, formatTime } from "@/lib/api";
+import { api, formatTime, INVALID_RESPONSE_MESSAGE } from "@/lib/api";
+import { isNetworkFailure, reportConnectivity, useOffline } from "@/lib/offline";
 import { getSubscriptionStatus, subscribePush, unsubscribePush } from "@/lib/push";
+import { formatDateTime, loadLastSchedules, parseSchedules, saveLastSchedules, Schedule } from "@/lib/schedules";
 
-type Schedule = {
-  id: number;
-  scheduled_at: string;
-  message: string;
-  sent: boolean | number;
-  discarded: boolean | number;
-};
+const NETWORK_FAILURE_MESSAGE = "通信できませんでした。電波の良い場所でもう一度お試しください。";
+
+/**
+ * 予定の表示状態。
+ * - loading: まだ取得していない
+ * - live: いま取得できた予定
+ * - last: 取得に失敗したので、最後に取得できた予定を出している
+ * - none: 取得に失敗し、出せる予定もない
+ */
+type ScheduleView = { state: "loading" | "live" | "last" | "none"; schedules: Schedule[]; fetchedAt: string; error: string };
 
 export default function Home() {
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [subscribed, setSubscribed] = useState(false);
+  const [view, setView] = useState<ScheduleView>({ state: "loading", schedules: [], fetchedAt: "", error: "" });
+  // null は確認前。端末の購読状態が分かるまで「未設定」とは表示しない。
+  const [subscribed, setSubscribed] = useState<boolean | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const offline = useOffline();
+  const { schedules } = view;
   const pendingSchedules = schedules.filter((schedule) => !Boolean(schedule.sent));
   const nextSchedule = pendingSchedules[0];
 
   async function refresh() {
-    const data = await api<{ schedules: Schedule[] }>("/api/public/schedules");
-    setSchedules(data.schedules);
-    setSubscribed(await getSubscriptionStatus());
+    // 購読状態は端末内の情報なので、通信の成否に関係なく反映する。
+    getSubscriptionStatus().then(setSubscribed, () => setSubscribed(false));
+    try {
+      const data = await api<{ schedules?: unknown }>("/api/public/schedules");
+      const latest = parseSchedules(data?.schedules);
+      if (!latest) throw new Error(INVALID_RESPONSE_MESSAGE);
+      reportConnectivity(true);
+      saveLastSchedules(latest);
+      setView({ state: "live", schedules: latest, fetchedAt: "", error: "" });
+    } catch (error) {
+      const networkFailure = isNetworkFailure(error);
+      reportConnectivity(!networkFailure);
+      // 通信できないときの案内は画面上部のオフライン表示に任せる。
+      const reason = networkFailure ? "" : error instanceof Error ? error.message : "";
+      const last = loadLastSchedules();
+      setView(
+        last
+          ? { state: "last", schedules: last.schedules, fetchedAt: last.fetchedAt, error: reason }
+          : { state: "none", schedules: [], fetchedAt: "", error: reason },
+      );
+    }
   }
 
   useEffect(() => {
     // Initial state is synchronized with the API and browser PushManager.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    refresh().catch((error) => setMessage(error.message));
+    refresh();
+    // 回線が戻ったら取り直す。
+    window.addEventListener("online", refresh);
+    return () => window.removeEventListener("online", refresh);
   }, []);
 
   async function run(action: "subscribe" | "unsubscribe") {
@@ -46,7 +75,8 @@ export default function Home() {
       }
       await refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "うまく処理できませんでした。");
+      if (isNetworkFailure(error)) setMessage(NETWORK_FAILURE_MESSAGE);
+      else setMessage(error instanceof Error ? error.message : "うまく処理できませんでした。");
     } finally {
       setLoading(false);
     }
@@ -57,7 +87,7 @@ export default function Home() {
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-5 py-6 sm:py-10">
         <header className="flex items-center justify-between gap-4 border-b border-slate-200 pb-5">
           <div className="flex min-w-0 items-center gap-3">
-            <Image className="size-11 rounded-lg shadow-sm" src="/icon-192.png" width={44} height={44} alt="" />
+            <Image className="size-11 rounded-lg shadow-sm" src="/icon-192.png" width={44} height={44} alt="" unoptimized />
             <div className="min-w-0">
               <p className="text-xs font-bold text-cyan-700">OTSUGE</p>
               <h1 className="text-2xl font-bold sm:text-3xl">忘れたころに届く。</h1>
@@ -77,24 +107,28 @@ export default function Home() {
             <p className="text-sm font-bold text-amber-300">現在の状態</p>
             <div className="mt-4 flex flex-wrap items-end justify-between gap-5">
               <div>
-                <p className="text-3xl font-bold">{subscribed ? "受け取り中" : "未設定"}</p>
+                <p className="text-3xl font-bold">
+                  {subscribed === null ? "確認中" : subscribed ? "受け取り中" : "未設定"}
+                </p>
                 <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">
-                  {subscribed
-                    ? "今日のお告げを待機しています。予定は下の一覧で確認できます。"
-                    : "通知を許可すると、今日のどこかでOTSUGEからお告げが届きます。"}
+                  {subscribed === null
+                    ? "この端末の受け取り状態を確認しています。"
+                    : subscribed
+                      ? "今日のお告げを待機しています。予定は下の一覧で確認できます。"
+                      : "通知を許可すると、今日のどこかでOTSUGEからお告げが届きます。"}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button
                   className="rounded-md bg-cyan-300 px-4 py-3 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-cyan-200 disabled:opacity-40"
-                  disabled={loading || subscribed}
+                  disabled={loading || subscribed !== false}
                   onClick={() => run("subscribe")}
                 >
                   受け取る
                 </button>
                 <button
                   className="rounded-md border border-white/30 px-4 py-3 text-sm font-bold text-white transition hover:bg-white/10 disabled:opacity-40"
-                  disabled={loading || !subscribed}
+                  disabled={loading || subscribed !== true}
                   onClick={() => run("unsubscribe")}
                 >
                   停止する
@@ -105,8 +139,17 @@ export default function Home() {
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-            <p className="text-sm font-bold text-slate-500">次のお告げ</p>
-            {nextSchedule ? (
+            <p className="text-sm font-bold text-slate-500">
+              次のお告げ{view.state === "last" && `（${formatDateTime(view.fetchedAt)} 時点）`}
+            </p>
+            {view.state === "loading" || view.state === "none" ? (
+              <>
+                <p className="mt-3 text-3xl font-bold">{view.state === "loading" ? "確認中" : "不明"}</p>
+                <p className="mt-3 text-sm leading-6 text-slate-500">
+                  {view.state === "loading" ? "予定を読み込んでいます。" : "予定を取得できていません。"}
+                </p>
+              </>
+            ) : nextSchedule ? (
               <>
                 <time className="mt-3 block font-mono text-5xl font-bold text-slate-950">
                   {formatTime(nextSchedule.scheduled_at)}
@@ -133,8 +176,25 @@ export default function Home() {
             </p>
           </div>
 
+          {view.state === "last" && (
+            <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-5 py-3 text-sm font-bold leading-6 text-amber-900">
+              {!offline && `最新の予定を取得できませんでした。${view.error}`}
+              最後に取得できた予定を表示しています（{formatDateTime(view.fetchedAt)} 取得）。
+            </p>
+          )}
+
           <div className="mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-            {schedules.length === 0 && <p className="px-5 py-10 text-slate-500">今日はまだ静かです。</p>}
+            {schedules.length === 0 && (
+              <p className="px-5 py-10 text-slate-500">
+                {view.state === "loading"
+                  ? "読み込み中です。"
+                  : view.state === "none"
+                    ? offline
+                      ? "オフラインのため、予定を取得できません。"
+                      : `予定を取得できませんでした。${view.error}`
+                    : "今日はまだ静かです。"}
+              </p>
+            )}
             {schedules.map((schedule) => (
               <div
                 key={schedule.id}

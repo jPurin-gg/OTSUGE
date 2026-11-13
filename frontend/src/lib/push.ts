@@ -45,6 +45,7 @@ export async function unsubscribePush() {
 }
 
 export async function getSubscriptionStatus() {
+  if (!("serviceWorker" in navigator)) return false;
   const registration = await navigator.serviceWorker.getRegistration();
   return Boolean(await registration?.pushManager.getSubscription());
 }

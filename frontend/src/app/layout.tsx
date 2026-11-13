@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { OfflineBanner } from "./offline-banner";
 import { ServiceWorkerRegistration } from "./service-worker";
 
 export const metadata: Metadata = {
@@ -23,6 +24,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="ja">
       <body>
+        <OfflineBanner />
         {children}
         <ServiceWorkerRegistration />
       </body>
