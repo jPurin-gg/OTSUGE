@@ -12,6 +12,11 @@ export function isQuietMinute(minute: number, quietHours: Pick<QuietHoursRecord,
   });
 }
 
+/** お告げの終了時刻を分に直す。終了 `00:00` は「23:59 まで」として扱う。 */
+export function notificationEndMinute(endTime: string) {
+  return endTime === "00:00" ? 23 * 60 + 59 : minutesFromTime(endTime);
+}
+
 export function chooseMinutes(
   notification: Pick<NotificationRecord, "start_time" | "end_time" | "count_per_day" | "min_interval_minutes">,
   quietHours: Pick<QuietHoursRecord, "start_time" | "end_time" | "enabled">[],
@@ -19,7 +24,7 @@ export function chooseMinutes(
   earliestMinute = 0,
 ) {
   const start = Math.max(minutesFromTime(notification.start_time), earliestMinute);
-  const end = notification.end_time === "00:00" ? 23 * 60 + 59 : minutesFromTime(notification.end_time);
+  const end = notificationEndMinute(notification.end_time);
   if (end < start) return [];
 
   const candidates = Array.from({ length: end - start + 1 }, (_, index) => start + index)
