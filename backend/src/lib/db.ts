@@ -26,7 +26,7 @@ function createDb() {
 export const db = global.otsugeDb ?? createDb();
 if (process.env.NODE_ENV !== "production") global.otsugeDb = db;
 
-async function initialize() {
+export async function initializeDb(db: Knex) {
   if (!(await db.schema.hasTable("notifications"))) {
     await db.schema.createTable("notifications", (table) => {
       table.increments("id").primary();
@@ -64,6 +64,36 @@ async function initialize() {
     });
   }
 
+  if (!(await db.schema.hasColumn("schedules", "delivery_status"))) {
+    await db.schema.alterTable("schedules", (table) => {
+      table.string("delivery_status", 16).notNullable().defaultTo("pending");
+    });
+    await db("schedules").where({ sent: true, discarded: false }).update({ delivery_status: "sent" });
+    await db("schedules").where({ discarded: true }).update({ delivery_status: "discarded" });
+  }
+  if (!(await db.schema.hasColumn("schedules", "delivery_deadline_at"))) {
+    await db.schema.alterTable("schedules", (table) => {
+      table.timestamp("delivery_deadline_at");
+    });
+  }
+
+  if (!(await db.schema.hasTable("schedule_deliveries"))) {
+    await db.schema.createTable("schedule_deliveries", (table) => {
+      table.increments("id").primary();
+      table.integer("schedule_id").notNullable().references("id").inTable("schedules").onDelete("CASCADE");
+      // 購読削除後も失効・失敗の結果を残すため、subscriptions への外部キーは付けない。
+      table.integer("subscription_id").notNullable();
+      table.string("status", 16).notNullable().defaultTo("pending");
+      table.integer("attempt_count").notNullable().defaultTo(0);
+      table.text("last_error");
+      table.timestamp("next_attempt_at");
+      table.timestamp("created_at").notNullable();
+      table.timestamp("updated_at").notNullable();
+      table.unique(["schedule_id", "subscription_id"]);
+      table.index(["status", "next_attempt_at"]);
+    });
+  }
+
   if (!(await db.schema.hasTable("quiet_hours"))) {
     await db.schema.createTable("quiet_hours", (table) => {
       table.increments("id").primary();
@@ -89,10 +119,15 @@ async function initialize() {
       table.timestamp("created_at").notNullable();
     });
   }
+  if (!(await db.schema.hasColumn("delivery_logs", "pending_count"))) {
+    await db.schema.alterTable("delivery_logs", (table) => {
+      table.integer("pending_count").notNullable().defaultTo(0);
+    });
+  }
 }
 
 export async function readyDb() {
-  global.otsugeDbReady ??= initialize();
+  global.otsugeDbReady ??= initializeDb(db);
   await global.otsugeDbReady;
   return db;
 }

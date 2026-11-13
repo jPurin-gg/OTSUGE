@@ -47,6 +47,7 @@ export async function generateDailySchedules(database: Knex, dateKey = localDate
     .where("scheduled_at", ">=", start.toISOString())
     .andWhere("scheduled_at", "<", end.toISOString())
     .andWhere({ sent: false, manually_modified: false })
+    .whereNull("delivery_deadline_at")
     .delete();
 
   let generated = 0;
