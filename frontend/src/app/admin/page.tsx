@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { confirmAndSend, isResend } from "@/lib/admin-confirm";
 import { api, formatTime, toDatetimeLocal } from "@/lib/api";
 
 type NotificationItem = {
@@ -155,11 +156,30 @@ export default function AdminPage() {
     await loadAll();
   }
 
-  async function sendNow(id: number) {
-    const result = await api<{ delivered: number; failed: number; removed: number }>(`/api/admin/schedules/${id}/send`, {
-      method: "POST",
-    });
-    setMessage(`今すぐ送りました。成功: ${result.delivered}件 / 失敗: ${result.failed}件 / 購読解除: ${result.removed}件`);
+  // 全購読者に届き、取り消せないので、本文と送信先の件数を確認してから送る。
+  // 送信済み・破棄済みの予定は「再送」として送る（backend は resend の指定がないと拒否する）。
+  async function sendNow(schedule: Schedule) {
+    setMessage("");
+    try {
+      const outcome = await confirmAndSend(schedule, stats.subscriptionCount, {
+        confirm: (text) => window.confirm(text),
+        send: ({ resend }) =>
+          api<{ delivered: number; failed: number; removed: number }>(`/api/admin/schedules/${schedule.id}/send`, {
+            method: "POST",
+            body: JSON.stringify({ resend }),
+          }),
+      });
+      if (!outcome.sent) return;
+      const { delivered, failed, removed } = outcome.result;
+      setMessage(
+        `${outcome.resend ? "再送しました" : "今すぐ送りました"}。成功: ${delivered}件 / 失敗: ${failed}件 / 購読解除: ${removed}件`,
+      );
+    } catch (error) {
+      setMessage(`送信できませんでした。${error instanceof Error ? error.message : ""}`);
+      // 画面を開いている間に送信済みになっていた場合などに、最新の状態（「再送」ボタン）を表示する。
+      await loadAll().catch(() => undefined);
+      return;
+    }
     await loadAll();
   }
 
@@ -403,12 +423,21 @@ export default function AdminPage() {
                   />
                 </div>
                 <div className="flex gap-2">
-                  <button
-                    className="rounded-full bg-cyan-100 px-3 py-2 text-sm font-bold text-cyan-900"
-                    onClick={() => sendNow(schedule.id)}
-                  >
-                    今すぐ送る
-                  </button>
+                  {isResend(schedule) ? (
+                    <button
+                      className="rounded-full border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700"
+                      onClick={() => sendNow(schedule)}
+                    >
+                      再送
+                    </button>
+                  ) : (
+                    <button
+                      className="rounded-full bg-cyan-100 px-3 py-2 text-sm font-bold text-cyan-900"
+                      onClick={() => sendNow(schedule)}
+                    >
+                      今すぐ送る
+                    </button>
+                  )}
                   <button
                     className="rounded-full bg-red-50 px-3 py-2 text-sm font-bold text-red-700"
                     onClick={() => remove(`/api/admin/schedules/${schedule.id}`, "配信予定")}
