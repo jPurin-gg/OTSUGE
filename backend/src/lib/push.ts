@@ -1,5 +1,9 @@
 import webpush from "web-push";
 import type { Knex } from "knex";
+import { subscriptionInput } from "./subscription-input";
+import { createPushAgent } from "./push-security";
+
+const pushAgent = createPushAgent();
 
 type ScheduleWithMessage = {
   id: number;
@@ -30,17 +34,21 @@ export async function sendSchedule(database: Knex, scheduleId: number) {
   let removed = 0;
   for (const subscription of subscriptions) {
     try {
+      // Revalidate existing rows too: registration checks cannot protect legacy
+      // records or a DNS answer that changes between registration and delivery.
+      const input = subscriptionInput.parse({
+        endpoint: subscription.endpoint,
+        keys: { p256dh: subscription.p256dh, auth: subscription.auth },
+      });
       await webpush.sendNotification(
-        {
-          endpoint: subscription.endpoint,
-          keys: { p256dh: subscription.p256dh, auth: subscription.auth },
-        },
+        input,
         JSON.stringify({
           title: "OTSUGE",
           body: schedule.message,
           url: "/",
           tag: `otsuge-${schedule.id}`,
         }),
+        { agent: pushAgent, timeout: 10_000 },
       );
       delivered += 1;
     } catch (error) {
@@ -50,7 +58,8 @@ export async function sendSchedule(database: Knex, scheduleId: number) {
         await database("subscriptions").where({ id: subscription.id }).delete();
         removed += 1;
       } else {
-        console.error("Push delivery failed", error);
+        // Do not log subscription capability URLs, keys, or upstream responses.
+        console.error("Push delivery failed", { statusCode });
       }
     }
   }
