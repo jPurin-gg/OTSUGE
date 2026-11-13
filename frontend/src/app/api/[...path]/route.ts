@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { readProxyBody, SubscriptionBodyError } from "@/lib/subscription-body";
 
 type Context = { params: Promise<{ path: string[] }> };
 
@@ -11,10 +12,20 @@ async function proxy(request: NextRequest, context: Context) {
   headers.delete("host");
   headers.delete("content-length");
 
+  let body: ArrayBuffer | undefined;
+  try {
+    body = request.method === "GET" || request.method === "HEAD" ? undefined : await readProxyBody(request, target.pathname);
+  } catch (error) {
+    if (error instanceof SubscriptionBodyError) {
+      return Response.json({ error: error.message }, { status: error.status });
+    }
+    throw error;
+  }
+
   const response = await fetch(target, {
     method: request.method,
     headers,
-    body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
+    body,
     redirect: "manual",
   });
 
