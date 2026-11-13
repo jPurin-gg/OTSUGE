@@ -24,11 +24,15 @@ export async function sendSchedule(database: Knex, scheduleId: number) {
     .first()) as ScheduleWithMessage | undefined;
   if (!schedule) throw new Error("通知予定が見つかりません。");
 
+  const expiresAt = new Date(schedule.scheduled_at).getTime() + 30 * 60 * 1000;
   const subscriptions = await database("subscriptions").select("*");
   let delivered = 0;
   let failed = 0;
   let removed = 0;
   for (const subscription of subscriptions) {
+    // Pushサービスに預けた後も、予定時刻から30分以内に有効期限を収める。
+    const ttl = Math.min(1800, Math.floor((expiresAt - Date.now()) / 1000));
+    if (ttl <= 0) break;
     try {
       await webpush.sendNotification(
         {
@@ -41,6 +45,7 @@ export async function sendSchedule(database: Knex, scheduleId: number) {
           url: "/",
           tag: `otsuge-${schedule.id}`,
         }),
+        { TTL: ttl, urgency: "normal" },
       );
       delivered += 1;
     } catch (error) {
