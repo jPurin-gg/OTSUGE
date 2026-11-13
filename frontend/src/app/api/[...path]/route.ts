@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { toProxyResponseHeaders, toUpstreamRequestHeaders } from "@/lib/proxy-headers";
 
 type Context = { params: Promise<{ path: string[] }> };
 
@@ -7,9 +8,7 @@ async function proxy(request: NextRequest, context: Context) {
   const target = new URL(`/api/${path.join("/")}`, process.env.BACKEND_URL ?? "http://backend:3001");
   target.search = request.nextUrl.search;
 
-  const headers = new Headers(request.headers);
-  headers.delete("host");
-  headers.delete("content-length");
+  const headers = toUpstreamRequestHeaders(request.headers);
 
   const response = await fetch(target, {
     method: request.method,
@@ -21,7 +20,7 @@ async function proxy(request: NextRequest, context: Context) {
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
-    headers: response.headers,
+    headers: toProxyResponseHeaders(response.headers),
   });
 }
 
