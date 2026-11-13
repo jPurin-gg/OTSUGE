@@ -1,4 +1,5 @@
 import knex, { Knex } from "knex";
+import type { Database as SqliteDatabase } from "sqlite3";
 
 declare global {
   var otsugeDb: Knex | undefined;
@@ -20,6 +21,11 @@ function createDb() {
       filename: process.env.SQLITE_PATH ?? "/data/otsuge.sqlite3",
     },
     useNullAsDefault: true,
+    pool: {
+      afterCreate(connection: SqliteDatabase, done: (error: Error | null, connection: SqliteDatabase) => void) {
+        connection.run("PRAGMA busy_timeout = 5000", (error) => done(error, connection));
+      },
+    },
   });
 }
 
@@ -62,6 +68,18 @@ async function initialize() {
       table.timestamp("created_at").notNullable();
       table.timestamp("updated_at").notNullable();
     });
+  }
+
+  if (!(await db.schema.hasTable("schedule_generation_locks"))) {
+    try {
+      await db.schema.createTable("schedule_generation_locks", (table) => {
+        table.string("date", 10).primary();
+      });
+    } catch (error) {
+      // Another backend may have created this table after hasTable completed.
+      // Recheck outside a transaction so PostgreSQL DDL errors cannot poison it.
+      if (!(await db.schema.hasTable("schedule_generation_locks"))) throw error;
+    }
   }
 
   if (!(await db.schema.hasTable("quiet_hours"))) {

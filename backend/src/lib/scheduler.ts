@@ -37,39 +37,47 @@ export function chooseMinutes(
 }
 
 export async function generateDailySchedules(database: Knex, dateKey = localDateKey()) {
-  const notifications = (await database("notifications").where({ enabled: true })) as NotificationRecord[];
-  const quietHours = (await database("quiet_hours").where({ enabled: true })) as QuietHoursRecord[];
-  const { start, end } = dayBounds(dateKey);
-  const now = new Date();
-  const earliestMinute = dateKey === localDateKey(now) ? Math.min(localMinuteOfDay(now) + 1, 24 * 60) : 0;
+  return database.transaction(async (transaction) => {
+    // The first statement must be a write: PostgreSQL locks this date's row,
+    // while SQLite acquires its writer lock before any snapshot is read.
+    // Keep the row across runs, and update even on conflict to hold the lock
+    // until all schedule changes commit or roll back.
+    await transaction("schedule_generation_locks").insert({ date: dateKey }).onConflict("date").merge();
 
-  await database("schedules")
-    .where("scheduled_at", ">=", start.toISOString())
-    .andWhere("scheduled_at", "<", end.toISOString())
-    .andWhere({ sent: false, manually_modified: false })
-    .delete();
+    const notifications = (await transaction("notifications").where({ enabled: true })) as NotificationRecord[];
+    const quietHours = (await transaction("quiet_hours").where({ enabled: true })) as QuietHoursRecord[];
+    const { start, end } = dayBounds(dateKey);
+    const now = new Date();
+    const earliestMinute = dateKey === localDateKey(now) ? Math.min(localMinuteOfDay(now) + 1, 24 * 60) : 0;
 
-  let generated = 0;
-  const warnings: string[] = [];
-  for (const notification of notifications) {
-    const selected = chooseMinutes(notification, quietHours, Math.random, earliestMinute);
-    if (selected.length < notification.count_per_day) {
-      warnings.push(`「${notification.message}」は条件内で${selected.length}件のみ生成しました。`);
+    await transaction("schedules")
+      .where("scheduled_at", ">=", start.toISOString())
+      .andWhere("scheduled_at", "<", end.toISOString())
+      .andWhere({ sent: false, manually_modified: false })
+      .delete();
+
+    let generated = 0;
+    const warnings: string[] = [];
+    for (const notification of notifications) {
+      const selected = chooseMinutes(notification, quietHours, Math.random, earliestMinute);
+      if (selected.length < notification.count_per_day) {
+        warnings.push(`「${notification.message}」は条件内で${selected.length}件のみ生成しました。`);
+      }
+      if (!selected.length) continue;
+      const createdAt = now.toISOString();
+      await transaction("schedules").insert(
+        selected.map((minute) => ({
+          notification_id: notification.id,
+          scheduled_at: zonedDateTimeToUtc(dateKey, timeFromMinutes(minute)).toISOString(),
+          sent: false,
+          discarded: false,
+          manually_modified: false,
+          created_at: createdAt,
+          updated_at: createdAt,
+        })),
+      );
+      generated += selected.length;
     }
-    if (!selected.length) continue;
-    const createdAt = now.toISOString();
-    await database("schedules").insert(
-      selected.map((minute) => ({
-        notification_id: notification.id,
-        scheduled_at: zonedDateTimeToUtc(dateKey, timeFromMinutes(minute)).toISOString(),
-        sent: false,
-        discarded: false,
-        manually_modified: false,
-        created_at: createdAt,
-        updated_at: createdAt,
-      })),
-    );
-    generated += selected.length;
-  }
-  return { generated, warnings, date: dateKey };
+    return { generated, warnings, date: dateKey };
+  });
 }
