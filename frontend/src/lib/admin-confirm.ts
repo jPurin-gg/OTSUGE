@@ -81,3 +81,38 @@ export async function confirmAndSend<T>(
   const resend = isResend(schedule);
   return { sent: true, resend, result: await actions.send({ resend }) };
 }
+
+/**
+ * 当日の予定を引き直すときに削除される予定。backend の生成処理と同じ条件
+ * （未送信かつ手動編集でない）で数える。
+ */
+export function countRegeneration(schedules: Pick<ConfirmSchedule, "sent" | "discarded" | "manually_modified">[]) {
+  let deleted = 0;
+  let keptDone = 0;
+  let keptManual = 0;
+  for (const schedule of schedules) {
+    if (scheduleState(schedule) !== "unsent") keptDone += 1;
+    else if (Boolean(schedule.manually_modified)) keptManual += 1;
+    else deleted += 1;
+  }
+  return { deleted, keptDone, keptManual };
+}
+
+/** 「今日の予定を引き直す」の確認文。削除される予定の件数と、残る予定を入れる。 */
+export function regenerateConfirmText(schedules: Pick<ConfirmSchedule, "sent" | "discarded" | "manually_modified">[]) {
+  const { deleted, keptDone, keptManual } = countRegeneration(schedules);
+  const kept = [
+    keptDone > 0 ? `送信済み・破棄済みの予定 ${keptDone}件` : "",
+    keptManual > 0 ? `手動編集した未送信の予定 ${keptManual}件` : "",
+  ].filter(Boolean);
+  return [
+    "今日の配信予定を引き直します。",
+    "",
+    deleted > 0
+      ? `・未送信の予定 ${deleted}件を削除し、現在時刻より後の時刻で新しくつくり直します。`
+      : "・削除される予定はありません（未送信で手動編集していない予定は0件です）。現在時刻より後の時刻で新しく予定をつくります。",
+    ...(kept.length > 0 ? [`・${kept.join("と、")}は残ります。`] : []),
+    "",
+    deleted > 0 ? "削除した予定は元に戻せません。引き直しますか？" : "つくった予定は自動で配信されます。実行しますか？",
+  ].join("\n");
+}

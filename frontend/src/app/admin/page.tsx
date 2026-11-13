@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { confirmAndSend, isResend } from "@/lib/admin-confirm";
+import { confirmAndSend, isResend, regenerateConfirmText } from "@/lib/admin-confirm";
 import { api, formatTime, toDatetimeLocal } from "@/lib/api";
 
 type NotificationItem = {
@@ -136,9 +136,11 @@ export default function AdminPage() {
     await loadAll();
   }
 
-  async function generateSchedules() {
+  // 当日の未送信の予定（手動編集を除く）を削除して引き直す。削除される件数を確認文に出す。
+  async function regenerateSchedules() {
+    if (!window.confirm(regenerateConfirmText(schedules))) return;
     const result = await api<{ generated: number; warnings: string[] }>("/api/admin/schedules", { method: "POST" });
-    setMessage(`今日のお告げを${result.generated}件つくりました。${result.warnings.join(" ")}`);
+    setMessage(`今日の予定を引き直し、新しく${result.generated}件つくりました。${result.warnings.join(" ")}`);
     await loadAll();
   }
 
@@ -213,9 +215,6 @@ export default function AdminPage() {
         <div className="flex gap-3">
           <button className="rounded-full bg-white px-4 py-2 font-bold shadow-sm" onClick={loadAll}>
             更新
-          </button>
-          <button className="rounded-full bg-slate-950 px-4 py-2 font-bold text-white" onClick={generateSchedules}>
-            今日のお告げを生成
           </button>
         </div>
       </header>
@@ -401,7 +400,17 @@ export default function AdminPage() {
         </form>
 
         <section className="rounded-3xl bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-bold">今日の配信予定</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-xl font-bold">今日の配信予定</h2>
+            {/* 読み込み直すだけの「更新」と押し間違えないよう、予定の一覧の側に置く。 */}
+            <button
+              type="button"
+              className="rounded-full border border-slate-300 px-4 py-2 text-sm font-bold"
+              onClick={regenerateSchedules}
+            >
+              今日の予定を引き直す
+            </button>
+          </div>
           <div className="mt-4 divide-y divide-slate-100">
             {schedules.length === 0 && <p className="py-6 text-slate-500">今日の予定はまだありません。</p>}
             {schedules.map((schedule) => (

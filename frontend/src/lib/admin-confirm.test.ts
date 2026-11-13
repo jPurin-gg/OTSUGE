@@ -3,7 +3,9 @@ import test from "node:test";
 import {
   confirmAndSend,
   ConfirmSchedule,
+  countRegeneration,
   isResend,
+  regenerateConfirmText,
   scheduleState,
   sendConfirmText,
 } from "./admin-confirm";
@@ -128,4 +130,38 @@ test("confirmAndSend: 送信の失敗はそのまま投げる", async () => {
     }),
     failure,
   );
+});
+
+test("countRegeneration: backend と同じ条件（未送信かつ手動編集でない）で削除件数を数える", () => {
+  const schedules = [
+    unsent,
+    schedule({ sent: 0, manually_modified: 0 }),
+    schedule({ manually_modified: true }),
+    sent,
+    schedule({ sent: true, manually_modified: true }),
+    discarded,
+  ];
+  assert.deepEqual(countRegeneration(schedules), { deleted: 2, keptDone: 3, keptManual: 1 });
+  assert.deepEqual(countRegeneration([]), { deleted: 0, keptDone: 0, keptManual: 0 });
+});
+
+test("regenerateConfirmText: 削除される予定の件数と、残る予定が入る", () => {
+  const text = regenerateConfirmText([unsent, unsent, schedule({ manually_modified: true }), sent, discarded]);
+  assert.match(text, /引き直します/);
+  assert.ok(text.includes("未送信の予定 2件を削除"));
+  assert.ok(text.includes("送信済み・破棄済みの予定 2件"));
+  assert.ok(text.includes("手動編集した未送信の予定 1件"));
+  assert.match(text, /は残ります/);
+  assert.match(text, /元に戻せません/);
+});
+
+test("regenerateConfirmText: 削除される予定がないときも、そのことを伝えて確認する", () => {
+  const empty = regenerateConfirmText([]);
+  assert.match(empty, /削除される予定はありません/);
+  assert.match(empty, /実行しますか？/);
+  assert.doesNotMatch(empty, /は残ります/);
+
+  const onlySent = regenerateConfirmText([sent]);
+  assert.match(onlySent, /削除される予定はありません/);
+  assert.ok(onlySent.includes("送信済み・破棄済みの予定 1件は残ります"));
 });
