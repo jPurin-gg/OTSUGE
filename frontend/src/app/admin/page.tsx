@@ -1,7 +1,9 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { api, formatTime, toDatetimeLocal } from "@/lib/api";
+import { api, formatTime } from "@/lib/api";
+import { commitScheduleTime } from "@/lib/schedule-time";
+import { ScheduleTimeInput } from "./schedule-time-input";
 
 type NotificationItem = {
   id: number;
@@ -141,12 +143,32 @@ export default function AdminPage() {
     await loadAll();
   }
 
-  async function updateSchedule(id: number, value: string) {
-    await api(`/api/admin/schedules/${id}`, {
-      method: "PUT",
-      body: JSON.stringify({ scheduled_at: new Date(value).toISOString() }),
-    });
-    await loadAll();
+  // 時刻欄の確定。保存して一覧に反映できたら true、保存しなかった（欄を元の時刻に戻す）なら false を返す。
+  async function updateSchedule(schedule: Schedule, value: string) {
+    setMessage("");
+    try {
+      const result = await commitScheduleTime(schedule, value, {
+        confirm: (text) => window.confirm(text),
+        save: (scheduledAt) =>
+          api(`/api/admin/schedules/${schedule.id}`, {
+            method: "PUT",
+            body: JSON.stringify({ scheduled_at: scheduledAt }),
+          }),
+      });
+      if (result === "invalid") setMessage("配信時刻が空か、時刻として読めなかったため、元の時刻に戻しました。");
+      if (result !== "saved") return false;
+    } catch (error) {
+      setMessage(`配信時刻を変更できませんでした。${error instanceof Error ? error.message : ""}`);
+      // 送信済みになっていた場合などに、最新の状態を表示する。
+      await loadAll().catch(() => undefined);
+      return false;
+    }
+    try {
+      await loadAll();
+    } catch {
+      setMessage("配信時刻を変更しましたが、一覧を読み込み直せませんでした。「更新」を押してください。");
+    }
+    return true;
   }
 
   async function remove(path: string, label: string) {
@@ -395,11 +417,10 @@ export default function AdminPage() {
                 </div>
                 <div>
                   <p className="font-bold">{schedule.message}</p>
-                  <input
-                    className="mt-2 rounded-xl border border-slate-200 px-3 py-2"
-                    type="datetime-local"
-                    defaultValue={toDatetimeLocal(schedule.scheduled_at)}
-                    onBlur={(event) => updateSchedule(schedule.id, event.target.value)}
+                  <ScheduleTimeInput
+                    key={schedule.scheduled_at}
+                    schedule={schedule}
+                    onCommit={(value) => updateSchedule(schedule, value)}
                   />
                 </div>
                 <div className="flex gap-2">
