@@ -47,6 +47,13 @@ docker compose -f compose.prod.yaml up --build -d
 本番では `database/database.prod.env` のPostgreSQL設定を使います。
 管理画面の本番パスワードは `backend/backend.prod.env` の `ADMIN_PASSWORD` です。
 
+## オフライン表示
+
+フロントエンドのService Worker（`frontend/public/sw.js`）はページ表示時に登録されます。通信できないときは、最後に表示できたページに「オフラインです」の案内と、最後に取得できた予定を表示します。
+
+- ページ・JS・CSSのキャッシュは本番ビルド（`next build`）でだけ有効です。ビルドごとに識別子が変わり、古いビルドのキャッシュは新しいService Workerの有効化時に削除されます。
+- 開発サーバー（`docker compose up`）ではページ・JS・CSSをキャッシュせず、通信できないときは `offline.html` だけを返します。オフライン表示を確認するときは本番想定起動を使ってください。
+
 ## 環境変数ファイル
 
 `.env` / `.prod.env` 相当の実値入りファイルはGit管理しません。Gitには `*.env.example` / `*.prod.env.example` だけを含めます。
