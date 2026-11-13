@@ -1,4 +1,5 @@
 import { api } from "./api";
+import { describePermissionRefusal, isIos, type PushEnvironment, SUPPORTED_ENVIRONMENTS } from "./push-state";
 
 function urlBase64ToUint8Array(value: string) {
   const padding = "=".repeat((4 - (value.length % 4)) % 4);
@@ -7,13 +8,31 @@ function urlBase64ToUint8Array(value: string) {
   return Uint8Array.from([...raw].map((char) => char.charCodeAt(0)));
 }
 
-export async function subscribePush() {
-  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-    throw new Error("このブラウザでは通知を使えません。");
-  }
+function isPushSupported() {
+  return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+}
 
-  const permission = await Notification.requestPermission();
-  if (permission !== "granted") throw new Error("通知が許可されませんでした。");
+/** 端末・ブラウザの通知まわりの状態を読む。判定は push-state.ts の getPushCardState で行う。 */
+export async function readPushEnvironment(): Promise<PushEnvironment> {
+  const supported = isPushSupported();
+  return {
+    ios: isIos({ userAgent: navigator.userAgent, maxTouchPoints: navigator.maxTouchPoints ?? 0 }),
+    // iOS の Safari は display-mode に加えて、独自の navigator.standalone でも知らせる。
+    standalone:
+      window.matchMedia?.("(display-mode: standalone)").matches === true ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true,
+    secure: window.isSecureContext !== false,
+    supported,
+    permission: supported ? Notification.permission : "default",
+    subscribed: supported ? await getSubscriptionStatus().catch(() => false) : false,
+  };
+}
+
+export async function subscribePush() {
+  if (!isPushSupported()) throw new Error(`このブラウザでは通知を使えません。${SUPPORTED_ENVIRONMENTS}`);
+
+  const refusal = describePermissionRefusal(await Notification.requestPermission());
+  if (refusal) throw new Error(refusal);
 
   const registration = await navigator.serviceWorker.register("/sw.js");
   const { publicKey } = await api<{ publicKey: string }>("/api/public/vapid-key");
@@ -44,6 +63,7 @@ export async function unsubscribePush() {
 }
 
 export async function getSubscriptionStatus() {
+  if (!("serviceWorker" in navigator)) return false;
   const registration = await navigator.serviceWorker.getRegistration();
   return Boolean(await registration?.pushManager.getSubscription());
 }
