@@ -11,7 +11,9 @@ export async function POST(request: NextRequest, context: Context) {
   try {
     const { id } = await context.params;
     const database = await readyDb();
-    return json(await sendSchedule(database, Number(id)));
+    const result = await sendSchedule(database, Number(id));
+    if (!result) return json({ error: "この通知予定は送信済みか、現在処理中です。" }, { status: 409 });
+    return json(result);
   } catch (error) {
     return handleError(error);
   }
