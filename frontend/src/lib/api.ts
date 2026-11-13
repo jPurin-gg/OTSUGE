@@ -20,9 +20,3 @@ export function formatTime(value: string) {
     minute: "2-digit",
   }).format(new Date(value));
 }
-
-export function toDatetimeLocal(value: string) {
-  const date = new Date(value);
-  const offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
-}
