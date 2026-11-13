@@ -6,7 +6,7 @@ import { dayBounds, localDateKey } from "@/lib/time";
 import { generateDailySchedules } from "@/lib/scheduler";
 
 export async function GET(request: NextRequest) {
-  if (!isAdmin(request)) return unauthorized();
+  if (!(await isAdmin(request))) return unauthorized();
   const database = await readyDb();
   const { start, end } = dayBounds();
   const rows = await database("schedules as s")
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!isAdmin(request)) return unauthorized();
+  if (!(await isAdmin(request))) return unauthorized();
   const database = await readyDb();
   return json(await generateDailySchedules(database));
 }

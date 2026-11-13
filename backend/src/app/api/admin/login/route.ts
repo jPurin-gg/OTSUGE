@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "パスワードが違います。" }, { status: 401 });
     }
     const response = NextResponse.json({ ok: true });
-    setAdminCookie(response);
+    await setAdminCookie(response);
     return response;
   } catch (error) {
     return handleError(error);

@@ -7,7 +7,7 @@ import { quietHoursInput } from "@/lib/validation";
 type Context = { params: Promise<{ id: string }> };
 
 export async function PUT(request: NextRequest, context: Context) {
-  if (!isAdmin(request)) return unauthorized();
+  if (!(await isAdmin(request))) return unauthorized();
   try {
     const { id } = await context.params;
     const input = quietHoursInput.parse(await request.json());
@@ -22,7 +22,7 @@ export async function PUT(request: NextRequest, context: Context) {
 }
 
 export async function DELETE(request: NextRequest, context: Context) {
-  if (!isAdmin(request)) return unauthorized();
+  if (!(await isAdmin(request))) return unauthorized();
   const { id } = await context.params;
   const database = await readyDb();
   await database("quiet_hours").where({ id: Number(id) }).delete();

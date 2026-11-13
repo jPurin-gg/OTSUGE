@@ -7,7 +7,7 @@ import { sendSchedule } from "@/lib/push";
 type Context = { params: Promise<{ id: string }> };
 
 export async function POST(request: NextRequest, context: Context) {
-  if (!isAdmin(request)) return unauthorized();
+  if (!(await isAdmin(request))) return unauthorized();
   try {
     const { id } = await context.params;
     const database = await readyDb();
