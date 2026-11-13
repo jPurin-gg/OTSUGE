@@ -2,6 +2,15 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { api, formatTime, toDatetimeLocal } from "@/lib/api";
+import {
+  END_TIME_HINT,
+  QUIET_HOURS_HINT,
+  type TodayStatus,
+  allDayQuietHoursConfirmText,
+  isAllDayQuietHours,
+  notificationTimeError,
+  todayStatus,
+} from "@/lib/notification-settings";
 
 type NotificationItem = {
   id: number;
@@ -78,6 +87,16 @@ export default function AdminPage() {
   const [quietForm, setQuietForm] = useState<QuietForm>(emptyQuiet);
   const [editingQuietId, setEditingQuietId] = useState<number | null>(null);
 
+  // 開始が終了より後だと1件も生成されないので、入力欄の下に理由を出して保存を止める。
+  const notificationTimeProblem = notificationTimeError(notificationForm);
+  // 無効なお告げの未送信の予定は送られない（backend が送信時に確認する）。
+  // 有効に戻せば送られるので、予定の行は残して「送りません」と出す。
+  const disabledNotificationIds = new Set(
+    notifications.filter((item) => !Boolean(item.enabled)).map((item) => item.id),
+  );
+  const isBlocked = (schedule: Schedule) =>
+    !Boolean(schedule.sent) && disabledNotificationIds.has(schedule.notification_id);
+
   async function loadAll() {
     const [notificationData, quietData, scheduleData, statsData, deliveryLogData] = await Promise.all([
       api<{ notifications: NotificationItem[] }>("/api/admin/notifications"),
@@ -113,6 +132,7 @@ export default function AdminPage() {
 
   async function saveNotification(event: FormEvent) {
     event.preventDefault();
+    if (notificationTimeProblem) return;
     const path = editingNotificationId ? `/api/admin/notifications/${editingNotificationId}` : "/api/admin/notifications";
     await api(path, {
       method: editingNotificationId ? "PUT" : "POST",
@@ -125,6 +145,8 @@ export default function AdminPage() {
 
   async function saveQuietHour(event: FormEvent) {
     event.preventDefault();
+    // 開始と終了が同じだと終日が禁止時間帯になり、全お告げが生成されなくなるので、確認してから保存する。
+    if (isAllDayQuietHours(quietForm) && !window.confirm(allDayQuietHoursConfirmText(quietForm))) return;
     const path = editingQuietId ? `/api/admin/quiet-hours/${editingQuietId}` : "/api/admin/quiet-hours";
     await api(path, {
       method: editingQuietId ? "PUT" : "POST",
@@ -203,7 +225,10 @@ export default function AdminPage() {
 
       <section className="grid gap-3 sm:grid-cols-3">
         <StatCard label="購読者" value={`${stats.subscriptionCount}件`} />
-        <StatCard label="今日の未送信" value={`${schedules.filter((schedule) => !Boolean(schedule.sent)).length}件`} />
+        <StatCard
+          label="今日の未送信"
+          value={`${schedules.filter((schedule) => !Boolean(schedule.sent) && !isBlocked(schedule)).length}件`}
+        />
         <StatCard label="最近のログ" value={`${deliveryLogs.length}件`} />
       </section>
 
@@ -226,11 +251,12 @@ export default function AdminPage() {
                 onChange={(event) => setNotificationForm({ ...notificationForm, start_time: event.target.value })}
               />
             </Field>
-            <Field label="終了">
+            <Field label="終了" hint={END_TIME_HINT}>
               <input
                 className="input"
                 type="time"
                 value={notificationForm.end_time}
+                aria-invalid={Boolean(notificationTimeProblem)}
                 onChange={(event) => setNotificationForm({ ...notificationForm, end_time: event.target.value })}
               />
             </Field>
@@ -257,6 +283,11 @@ export default function AdminPage() {
               />
             </Field>
           </div>
+          {notificationTimeProblem && (
+            <p role="alert" className="mt-3 text-sm font-bold text-red-700">
+              {notificationTimeProblem}
+            </p>
+          )}
           <label className="mt-4 flex items-center gap-2 text-sm font-bold">
             <input
               type="checkbox"
@@ -265,7 +296,13 @@ export default function AdminPage() {
             />
             有効
           </label>
-          <button className="mt-5 rounded-2xl bg-slate-950 px-5 py-3 font-bold text-white">
+          <p className="mt-1 text-xs text-slate-500">
+            無効にすると、今日の未送信の予定も送りません。有効に戻すと、残っている予定は送られます。
+          </p>
+          <button
+            className="mt-5 rounded-2xl bg-slate-950 px-5 py-3 font-bold text-white disabled:opacity-40"
+            disabled={Boolean(notificationTimeProblem)}
+          >
             {editingNotificationId ? "更新" : "追加"}
           </button>
         </form>
@@ -282,6 +319,8 @@ export default function AdminPage() {
                       {item.start_time}-{item.end_time} / {item.count_per_day}回 / {item.min_interval_minutes}分間隔 /{" "}
                       {Boolean(item.enabled) ? "有効" : "無効"}
                     </p>
+                    {/* 自動生成で設定回数に満たなかったお告げが、画面を開けば分かるようにする。 */}
+                    <TodayBadge status={todayStatus(item, schedules, quietHours)} />
                   </div>
                   <div className="flex shrink-0 gap-2">
                     <button
@@ -335,6 +374,12 @@ export default function AdminPage() {
               />
             </Field>
           </div>
+          <p className="mt-2 text-xs text-slate-500">{QUIET_HOURS_HINT}</p>
+          {isAllDayQuietHours(quietForm) && (
+            <p className="mt-2 text-sm font-bold text-amber-800">
+              開始と終了が同じなので、終日が「静かにする時間」になります（有効な間は、お告げが生成されません）。
+            </p>
+          )}
           <label className="mt-4 flex items-center gap-2 text-sm font-bold">
             <input
               type="checkbox"
@@ -350,7 +395,8 @@ export default function AdminPage() {
             {quietHours.map((quiet) => (
               <div key={quiet.id} className="flex items-center justify-between rounded-2xl bg-slate-50 p-3">
                 <span>
-                  {quiet.start_time}-{quiet.end_time} / {Boolean(quiet.enabled) ? "有効" : "無効"}
+                  {quiet.start_time}-{quiet.end_time}
+                  {isAllDayQuietHours(quiet) ? "（終日）" : ""} / {Boolean(quiet.enabled) ? "有効" : "無効"}
                 </span>
                 <span className="flex gap-2">
                   <button
@@ -389,7 +435,13 @@ export default function AdminPage() {
                 <div>
                   <p className="font-mono text-lg font-bold">{formatTime(schedule.scheduled_at)}</p>
                   <p className="text-xs text-slate-500">
-                    {Boolean(schedule.sent) ? (Boolean(schedule.discarded) ? "破棄" : "送信済み") : "未送信"}
+                    {Boolean(schedule.sent)
+                      ? Boolean(schedule.discarded)
+                        ? "破棄"
+                        : "送信済み"
+                      : isBlocked(schedule)
+                        ? "送りません（お告げが無効）"
+                        : "未送信"}
                     {Boolean(schedule.manually_modified) ? " / 手動編集" : ""}
                   </p>
                 </div>
@@ -404,7 +456,13 @@ export default function AdminPage() {
                 </div>
                 <div className="flex gap-2">
                   <button
-                    className="rounded-full bg-cyan-100 px-3 py-2 text-sm font-bold text-cyan-900"
+                    className="rounded-full bg-cyan-100 px-3 py-2 text-sm font-bold text-cyan-900 disabled:opacity-40"
+                    disabled={isBlocked(schedule)}
+                    title={
+                      isBlocked(schedule)
+                        ? "お告げが無効のため送れません。送るには、お告げを有効にしてください。"
+                        : undefined
+                    }
                     onClick={() => sendNow(schedule.id)}
                   >
                     今すぐ送る
@@ -463,13 +521,29 @@ function LogStatus({ status }: { status: DeliveryLog["status"] }) {
   return <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">送信済み</span>;
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function TodayBadge({ status }: { status: TodayStatus }) {
+  const color =
+    status.tone === "warn"
+      ? "bg-amber-100 text-amber-900"
+      : status.tone === "muted"
+        ? "bg-slate-100 text-slate-600"
+        : "bg-emerald-50 text-emerald-700";
+  return (
+    <p className={`mt-1 w-fit rounded-full px-2 py-0.5 text-xs font-bold ${color}`}>
+      {status.tone === "warn" ? "⚠ " : ""}
+      {status.text}
+    </p>
+  );
+}
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <label className="block text-sm font-bold">
       {label}
       <div className="mt-2 [&_.input]:w-full [&_.input]:rounded-2xl [&_.input]:border [&_.input]:border-slate-200 [&_.input]:px-4 [&_.input]:py-3">
         {children}
       </div>
+      {hint && <span className="mt-1 block text-xs font-normal text-slate-500">{hint}</span>}
     </label>
   );
 }
