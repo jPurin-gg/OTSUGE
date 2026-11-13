@@ -1,4 +1,5 @@
 import knex, { Knex } from "knex";
+import type { Database } from "sqlite3";
 
 declare global {
   var otsugeDb: Knex | undefined;
@@ -20,6 +21,11 @@ function createDb() {
       filename: process.env.SQLITE_PATH ?? "/data/otsuge.sqlite3",
     },
     useNullAsDefault: true,
+    pool: {
+      afterCreate(connection: Database, done: (error: Error | null, connection: Database) => void) {
+        connection.run("PRAGMA foreign_keys = ON", (error) => done(error, connection));
+      },
+    },
   });
 }
 
