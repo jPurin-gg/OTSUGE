@@ -1,4 +1,5 @@
 import { api } from "./api";
+import { registerServiceWorker } from "./sw";
 
 function urlBase64ToUint8Array(value: string) {
   const padding = "=".repeat((4 - (value.length % 4)) % 4);
@@ -15,7 +16,7 @@ export async function subscribePush() {
   const permission = await Notification.requestPermission();
   if (permission !== "granted") throw new Error("通知が許可されませんでした。");
 
-  const registration = await navigator.serviceWorker.register("/sw.js");
+  const registration = await registerServiceWorker();
   const { publicKey } = await api<{ publicKey: string }>("/api/public/vapid-key");
   if (!publicKey) throw new Error("通知用の鍵がまだ設定されていません。");
 
@@ -44,6 +45,7 @@ export async function unsubscribePush() {
 }
 
 export async function getSubscriptionStatus() {
+  if (!("serviceWorker" in navigator)) return false;
   const registration = await navigator.serviceWorker.getRegistration();
   return Boolean(await registration?.pushManager.getSubscription());
 }

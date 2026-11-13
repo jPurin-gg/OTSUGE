@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0f172a" />
+    <title>オフラインです | OTSUGE</title>
+    <!-- 通信できないときに Service Worker が返すページ。外部の JS・CSS・画像に依存させないこと。 -->
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f6f8fb;
+        color: #0f172a;
+        font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+      }
+      main {
+        max-width: 28rem;
+        padding: 2rem 1.25rem;
+        text-align: center;
+      }
+      .brand {
+        margin: 0;
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: #0e7490;
+      }
+      h1 {
+        margin: 0.5rem 0 0;
+        font-size: 1.75rem;
+      }
+      .lead {
+        margin: 1rem 0 0;
+        line-height: 1.75;
+        color: #475569;
+      }
+      button {
+        margin-top: 1.5rem;
+        padding: 0.75rem 1.25rem;
+        border: 0;
+        border-radius: 0.375rem;
+        background: #0f172a;
+        color: #fff;
+        font: inherit;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="brand">OTSUGE</p>
+      <h1>オフラインです</h1>
+      <p class="lead">このページを表示できませんでした。通信できる場所で、もう一度開いてください。</p>
+      <button type="button" onclick="location.reload()">再読み込み</button>
+    </main>
+  </body>
+</html>
