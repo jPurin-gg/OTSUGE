@@ -26,7 +26,7 @@ function createDb() {
 export const db = global.otsugeDb ?? createDb();
 if (process.env.NODE_ENV !== "production") global.otsugeDb = db;
 
-async function initialize() {
+export async function initializeDb(db: Knex) {
   if (!(await db.schema.hasTable("notifications"))) {
     await db.schema.createTable("notifications", (table) => {
       table.increments("id").primary();
@@ -89,10 +89,22 @@ async function initialize() {
       table.timestamp("created_at").notNullable();
     });
   }
+
+  if (!(await db.schema.hasTable("dispatch_progress"))) {
+    await db.schema.createTable("dispatch_progress", (table) => {
+      table.integer("schedule_id").primary().references("id").inTable("schedules").onDelete("CASCADE");
+      table.boolean("immediate").notNullable();
+      table.integer("subscription_cursor").notNullable().defaultTo(0);
+      table.integer("subscription_limit").notNullable();
+      table.integer("delivered_count").notNullable().defaultTo(0);
+      table.integer("failed_count").notNullable().defaultTo(0);
+      table.integer("removed_subscription_count").notNullable().defaultTo(0);
+    });
+  }
 }
 
 export async function readyDb() {
-  global.otsugeDbReady ??= initialize();
+  global.otsugeDbReady ??= initializeDb(db);
   await global.otsugeDbReady;
   return db;
 }
