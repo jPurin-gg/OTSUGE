@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { isAdmin, unauthorized } from "@/lib/auth";
 import { readyDb } from "@/lib/db";
 import { handleError, json } from "@/lib/http";
-import { sendSchedule } from "@/lib/push";
+import { NotificationDisabledError, sendSchedule } from "@/lib/push";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -13,6 +13,7 @@ export async function POST(request: NextRequest, context: Context) {
     const database = await readyDb();
     return json(await sendSchedule(database, Number(id)));
   } catch (error) {
+    if (error instanceof NotificationDisabledError) return json({ error: error.message }, { status: 409 });
     return handleError(error);
   }
 }

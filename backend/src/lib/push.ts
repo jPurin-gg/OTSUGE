@@ -7,6 +7,18 @@ type ScheduleWithMessage = {
   message: string;
 };
 
+type ScheduleToSend = ScheduleWithMessage & {
+  notification_enabled: boolean | number;
+};
+
+/** 無効なお告げの予定を送ろうとしたときのエラー。無効なお告げは配信の対象外なので送らない。 */
+export class NotificationDisabledError extends Error {
+  constructor() {
+    super("このお告げは無効のため、送信しませんでした。送るには、お告げを有効にしてください。");
+    this.name = "NotificationDisabledError";
+  }
+}
+
 function configure() {
   const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
   const privateKey = process.env.VAPID_PRIVATE_KEY;
@@ -19,10 +31,12 @@ export async function sendSchedule(database: Knex, scheduleId: number) {
   configure();
   const schedule = (await database("schedules as s")
     .join("notifications as n", "n.id", "s.notification_id")
-    .select("s.*", "n.message")
+    .select("s.*", "n.message", "n.enabled as notification_enabled")
     .where("s.id", scheduleId)
-    .first()) as ScheduleWithMessage | undefined;
+    .first()) as ScheduleToSend | undefined;
   if (!schedule) throw new Error("通知予定が見つかりません。");
+  // 予定の生成後に無効にされたお告げは、自動送信でも即時送信でも送らない。
+  if (!Boolean(schedule.notification_enabled)) throw new NotificationDisabledError();
 
   const subscriptions = await database("subscriptions").select("*");
   let delivered = 0;
@@ -106,17 +120,27 @@ export async function dispatchDueSchedules(database: Knex) {
     );
   }
 
-  const due = await database("schedules")
-    .where({ sent: false })
-    .andWhere("scheduled_at", "<=", now.toISOString())
-    .andWhere("scheduled_at", ">", overdue.toISOString())
-    .select("id");
+  // 無効なお告げの予定は送らずに残す。有効に戻せば送られ、戻さなければ30分後に上の処理で破棄される。
+  const due = await database("schedules as s")
+    .join("notifications as n", "n.id", "s.notification_id")
+    .where("s.sent", false)
+    .andWhere("n.enabled", true)
+    .andWhere("s.scheduled_at", "<=", now.toISOString())
+    .andWhere("s.scheduled_at", ">", overdue.toISOString())
+    .select("s.id");
+  let processed = 0;
   let delivered = 0;
   for (const schedule of due) {
-    const result = await sendSchedule(database, schedule.id);
-    delivered += result.delivered;
+    try {
+      const result = await sendSchedule(database, schedule.id);
+      processed += 1;
+      delivered += result.delivered;
+    } catch (error) {
+      // 一覧の取得後に無効にされたお告げは送らずに飛ばし、残りの予定の送信を続ける。
+      if (!(error instanceof NotificationDisabledError)) throw error;
+    }
   }
-  return { processed: due.length, delivered, discarded: overdueSchedules.length };
+  return { processed, delivered, discarded: overdueSchedules.length };
 }
 
 async function insertDeliveryLog(
