@@ -106,11 +106,12 @@ export async function dispatchDueSchedules(database: Knex) {
     );
   }
 
-  const due = await database("schedules")
-    .where({ sent: false })
-    .andWhere("scheduled_at", "<=", now.toISOString())
-    .andWhere("scheduled_at", ">", overdue.toISOString())
-    .select("id");
+  const due = await database("schedules as s")
+    .join("notifications as n", "n.id", "s.notification_id")
+    .where({ "s.sent": false })
+    .andWhere("s.scheduled_at", "<=", now.toISOString())
+    .andWhere("s.scheduled_at", ">", overdue.toISOString())
+    .select("s.id");
   let delivered = 0;
   for (const schedule of due) {
     const result = await sendSchedule(database, schedule.id);
