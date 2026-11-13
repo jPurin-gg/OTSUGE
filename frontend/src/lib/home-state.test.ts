@@ -1,15 +1,20 @@
 import assert from "node:assert/strict";
 import test, { afterEach } from "node:test";
 import {
+  DAY_CHANGE_GRACE_MS,
   describeLoadError,
   failed,
   fetchTodaySchedules,
+  forDay,
   initialLoad,
   INVALID_RESPONSE_MESSAGE,
   loaded,
+  type Loadable,
   reloading,
+  scheduleDay,
   SUBSCRIPTION_ERROR_MESSAGE,
   subscriptionView,
+  type TodaySchedules,
   UNEXPECTED_ERROR_MESSAGE,
 } from "./home-state";
 
@@ -41,6 +46,23 @@ test("一度も取得できていない失敗は値を持たない", () => {
 
 test("取り直すと前回の失敗の文言は消える", () => {
   assert.deepEqual(reloading(failed(initialLoad<boolean>(), "失敗")), { status: "loading", value: null, error: "" });
+});
+
+test("forDay() は同じ日の予定を残し、別の日に取得した予定を捨てる", () => {
+  const state: Loadable<TodaySchedules> = loaded({ day: "2026-11-14", schedules: [schedule] });
+  assert.equal(forDay(state, "2026-11-14"), state);
+  assert.deepEqual(forDay(state, "2026-11-15"), { status: "ready", value: null, error: "" });
+  assert.deepEqual(forDay(initialLoad<TodaySchedules>(), "2026-11-15"), initialLoad());
+});
+
+test("scheduleDay() は端末の日付を返し、0 時から猶予の間は前日のままにする", () => {
+  assert.equal(scheduleDay(new Date(2026, 10, 14, 12, 0, 0)), "2026-11-14");
+  assert.equal(scheduleDay(new Date(2026, 10, 14, 23, 59, 59)), "2026-11-14");
+  assert.equal(scheduleDay(new Date(2026, 10, 15, 0, 0, 0)), "2026-11-14");
+  assert.equal(scheduleDay(new Date(new Date(2026, 10, 15, 0, 0, 0).getTime() + DAY_CHANGE_GRACE_MS - 1)), "2026-11-14");
+  assert.equal(scheduleDay(new Date(new Date(2026, 10, 15, 0, 0, 0).getTime() + DAY_CHANGE_GRACE_MS)), "2026-11-15");
+  assert.equal(scheduleDay(new Date(2026, 0, 1, 0, 1, 0)), "2026-01-01");
+  assert.equal(scheduleDay(new Date(2026, 0, 1, 0, 0, 0)), "2025-12-31");
 });
 
 test("fetchTodaySchedules() は予定の配列を返す", async () => {

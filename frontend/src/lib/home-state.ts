@@ -38,6 +38,28 @@ export function failed<T>(state: Loadable<T>, error: string): Loadable<T> {
   return { status: "error", value: state.value, error };
 }
 
+/** 取得した予定と、それが何日の分か（端末の日付）。 */
+export type TodaySchedules = { day: string; schedules: Schedule[] };
+
+/** 別の日に取得した予定を捨てる。日付が変わった後に、前日の一覧を「今日のお告げ」として出さないため。 */
+export function forDay(state: Loadable<TodaySchedules>, day: string): Loadable<TodaySchedules> {
+  return state.value && state.value.day !== day ? { ...state, value: null } : state;
+}
+
+/** 日付が変わってから、その日の予定を取り直すまでの猶予。0 時に始まる当日分の生成が終わるのを待つ。 */
+export const DAY_CHANGE_GRACE_MS = 30_000;
+
+/** 日付が変わったかを確かめる間隔。 */
+export const DAY_CHECK_INTERVAL_MS = 60_000;
+
+/** 予定を取得する時点の「今日」（端末の日付）。0 時から DAY_CHANGE_GRACE_MS の間は前日のままにする。 */
+export function scheduleDay(now = new Date()) {
+  const date = new Date(now.getTime() - DAY_CHANGE_GRACE_MS);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
 export const INVALID_RESPONSE_MESSAGE = "サーバーから想定外の応答が返りました。";
 export const UNEXPECTED_ERROR_MESSAGE = "うまく処理できませんでした。時間をおいてもう一度お試しください。";
 export const SUBSCRIPTION_ERROR_MESSAGE =

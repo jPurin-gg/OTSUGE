@@ -4,16 +4,19 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { formatTime } from "@/lib/api";
 import {
+  DAY_CHECK_INTERVAL_MS,
   describeLoadError,
   failed,
   fetchTodaySchedules,
+  forDay,
   initialLoad,
   loaded,
   type Loadable,
   reloading,
+  scheduleDay,
   SUBSCRIPTION_ERROR_MESSAGE,
   subscriptionView,
-  type Schedule,
+  type TodaySchedules,
 } from "@/lib/home-state";
 import { getSubscriptionStatus, subscribePush, unsubscribePush } from "@/lib/push";
 
@@ -22,15 +25,17 @@ type Notice = { kind: "success" | "error"; text: string };
 
 export default function Home() {
   // 予定と購読状態は、それぞれ「読み込み中 / 失敗 / 取得済み」を持つ。取得できるまでは空の状態として描画しない。
-  const [today, setToday] = useState<Loadable<Schedule[]>>(initialLoad);
+  const [today, setToday] = useState<Loadable<TodaySchedules>>(initialLoad);
   const [subscription, setSubscription] = useState<Loadable<boolean>>(initialLoad);
   const [notice, setNotice] = useState<Notice | null>(null);
   // 購読・停止の処理中。
   const [loading, setLoading] = useState(false);
   // 最後に始めた取得の番号。先に始めた取得が後から終わっても、新しい結果を上書きさせない。
   const latestRefresh = useRef(0);
+  // 最後に取得を始めた日。日付が変わったことの検出に使う。
+  const refreshedDay = useRef("");
 
-  const schedules = today.value ?? [];
+  const schedules = today.value?.schedules ?? [];
   const pendingSchedules = schedules.filter((schedule) => !Boolean(schedule.sent));
   const nextSchedule = pendingSchedules[0];
   const refreshing = today.status === "loading" || subscription.status === "loading";
@@ -41,7 +46,9 @@ export default function Home() {
   async function refresh() {
     const id = ++latestRefresh.current;
     const isLatest = () => id === latestRefresh.current;
-    setToday(reloading);
+    const day = scheduleDay();
+    refreshedDay.current = day;
+    setToday((state) => reloading(forDay(state, day)));
     setSubscription(reloading);
 
     // 購読状態は端末内の情報なので、予定の取得を待たず、その成否にも関係なく反映する。
@@ -56,7 +63,7 @@ export default function Home() {
     );
     try {
       const latest = await fetchTodaySchedules();
-      if (isLatest()) setToday(loaded(latest));
+      if (isLatest()) setToday(loaded({ day, schedules: latest }));
     } catch (error) {
       console.error(error);
       if (isLatest()) setToday((state) => failed(state, describeLoadError(error)));
@@ -66,6 +73,23 @@ export default function Home() {
 
   useEffect(() => {
     refresh();
+
+    // PWA をバックグラウンドから戻したときに取り直す（送信済みになった予定、次のお告げ、購読状態）。
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    // 開いたまま日付が変わったら、新しい日の予定を取り直す。
+    // 0 時ちょうどのタイマーではなく定期的に日付を比べるので、端末のスリープをまたいでも検出できる。
+    const dayCheck = setInterval(() => {
+      if (document.visibilityState === "visible" && scheduleDay() !== refreshedDay.current) refresh();
+    }, DAY_CHECK_INTERVAL_MS);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      clearInterval(dayCheck);
+    };
   }, []);
 
   async function run(action: "subscribe" | "unsubscribe") {
