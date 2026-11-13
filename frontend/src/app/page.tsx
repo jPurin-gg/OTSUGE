@@ -53,7 +53,7 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f8fb] text-slate-950">
+    <main className="min-h-screen bg-[#f8fafc] text-slate-950">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-5 py-6 sm:py-10">
         <header className="flex items-center justify-between gap-4 border-b border-slate-200 pb-5">
           <div className="flex min-w-0 items-center gap-3">
