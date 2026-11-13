@@ -73,7 +73,7 @@ Web Pushを実際に送るにはVAPID鍵が必要です。backendコンテナ内
 docker compose run --rm backend npx web-push generate-vapid-keys
 ```
 
-本番用の鍵は `backend/backend.prod.env` に生成済みです。運用開始後にVAPID鍵を変更すると既存購読は再購読が必要になります。
+本番用の鍵は `backend/backend.prod.env` に生成済みです。運用開始後にVAPID鍵を変更すると、既存の購読には届かなくなります。利用者が次にアプリを開いたときに、新しい鍵で自動的に購読し直します（開くまでは届きません）。
 
 ## Cron
 

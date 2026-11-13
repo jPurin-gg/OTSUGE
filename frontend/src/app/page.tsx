@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { api, formatTime } from "@/lib/api";
-import { getSubscriptionStatus, subscribePush, unsubscribePush } from "@/lib/push";
+import { getSubscriptionStatus, subscribePush, syncPushSubscription, unsubscribePush } from "@/lib/push";
 
 type Schedule = {
   id: number;
@@ -27,10 +27,31 @@ export default function Home() {
     setSubscribed(await getSubscriptionStatus());
   }
 
+  // ページの表示時と「更新」で呼ぶ。予定を取り直し、ブラウザに購読があればサーバーの登録と揃える
+  // （「受け取り中」と表示したまま届かない状態を残さない）。途中で購読を操作しないよう、終わるまでボタンを止める。
+  async function reload() {
+    setLoading(true);
+    setMessage("");
+    try {
+      let failure = "";
+      try {
+        const data = await api<{ schedules: Schedule[] }>("/api/public/schedules");
+        setSchedules(data.schedules);
+      } catch (error) {
+        failure = error instanceof Error ? error.message : "うまく処理できませんでした。";
+      }
+      const { subscribed, notice } = await syncPushSubscription();
+      setSubscribed(subscribed);
+      setMessage(notice || failure);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     // Initial state is synchronized with the API and browser PushManager.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    refresh().catch((error) => setMessage(error.message));
+    reload();
   }, []);
 
   async function run(action: "subscribe" | "unsubscribe") {
@@ -65,7 +86,7 @@ export default function Home() {
           </div>
           <button
             className="shrink-0 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold shadow-sm transition hover:border-slate-400 disabled:opacity-50"
-            onClick={refresh}
+            onClick={reload}
             disabled={loading}
           >
             更新
