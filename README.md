@@ -51,6 +51,10 @@ docker compose -f compose.prod.yaml up --build -d
 
 `.env` / `.prod.env` 相当の実値入りファイルはGit管理しません。Gitには `*.env.example` / `*.prod.env.example` だけを含めます。
 
+backend / frontend の Docker ビルドでは `.env` / `.prod.env` と `*.env` をコンテキストから除外します。`backend/backend.env` / `backend/backend.prod.env` と `frontend/frontend.env` / `frontend/frontend.prod.env` が対象です。`*.env.example` は例外として含めます。実行時の値は Compose の `env_file` から注入します。
+
+除外規則とファイル名の対応は `node --test --test-isolation=none scripts/dockerignore.test.mjs`（Node.js 24）で確認できます。無害なダミーファイルを使ったパターン照合であり、Docker の実ビルド・起動確認は別途必要です。
+
 ローカル用:
 
 - `frontend/frontend.env`
