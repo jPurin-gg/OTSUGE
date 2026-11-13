@@ -23,17 +23,40 @@ export function chooseMinutes(
   if (end < start) return [];
 
   const candidates = Array.from({ length: end - start + 1 }, (_, index) => start + index)
-    .filter((minute) => !isQuietMinute(minute, quietHours))
-    .sort(() => random() - 0.5);
+    .filter((minute) => !isQuietMinute(minute, quietHours));
+
+  // Find the first compatible successor, always advancing even for a zero interval.
+  const nextIndexes: number[] = [];
+  let next = 0;
+  for (let index = 0; index < candidates.length; index += 1) {
+    next = Math.max(next, index + 1);
+    while (next < candidates.length && candidates[next] - candidates[index] < notification.min_interval_minutes) {
+      next += 1;
+    }
+    nextIndexes[index] = next;
+  }
+
+  // Maximum feasible count in each suffix, accounting for gaps from quiet hours.
+  const maxCounts = Array<number>(candidates.length + 1).fill(0);
+  for (let index = candidates.length - 1; index >= 0; index -= 1) {
+    maxCounts[index] = Math.max(maxCounts[index + 1], 1 + maxCounts[nextIndexes[index]]);
+  }
 
   const selected: number[] = [];
-  for (const minute of candidates) {
-    if (selected.every((existing) => Math.abs(existing - minute) >= notification.min_interval_minutes)) {
-      selected.push(minute);
-      if (selected.length === notification.count_per_day) break;
+  let remaining = Math.min(notification.count_per_day, maxCounts[0]);
+  let startIndex = 0;
+  while (remaining > 0) {
+    // Randomize only among choices that leave room for all remaining notifications.
+    const feasibleIndexes: number[] = [];
+    for (let index = startIndex; index < candidates.length; index += 1) {
+      if (1 + maxCounts[nextIndexes[index]] >= remaining) feasibleIndexes.push(index);
     }
+    const index = feasibleIndexes[Math.floor(random() * feasibleIndexes.length)];
+    selected.push(candidates[index]);
+    startIndex = nextIndexes[index];
+    remaining -= 1;
   }
-  return selected.sort((a, b) => a - b);
+  return selected;
 }
 
 export async function generateDailySchedules(database: Knex, dateKey = localDateKey()) {
