@@ -3,7 +3,9 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { api, formatTime } from "@/lib/api";
-import { getSubscriptionStatus, subscribePush, unsubscribePush } from "@/lib/push";
+import { readPushEnvironment, subscribePush, unsubscribePush } from "@/lib/push";
+import { describePushError, getPushCardView, type PushEnvironment } from "@/lib/push-state";
+import { PushCard } from "./push-card";
 
 type Schedule = {
   id: number;
@@ -15,22 +17,37 @@ type Schedule = {
 
 export default function Home() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [subscribed, setSubscribed] = useState(false);
+  // null は確認前。端末の状態が分かるまでは「未設定」とも「非対応」とも表示しない。
+  const [pushEnvironment, setPushEnvironment] = useState<PushEnvironment | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const pendingSchedules = schedules.filter((schedule) => !Boolean(schedule.sent));
   const nextSchedule = pendingSchedules[0];
 
+  async function refreshPush() {
+    setPushEnvironment(await readPushEnvironment());
+  }
+
   async function refresh() {
+    // 通知の状態は端末内の情報なので、予定の取得より先に、その成否に関係なく反映する。
+    setPushEnvironment(await readPushEnvironment());
     const data = await api<{ schedules: Schedule[] }>("/api/public/schedules");
     setSchedules(data.schedules);
-    setSubscribed(await getSubscriptionStatus());
   }
 
   useEffect(() => {
     // Initial state is synchronized with the API and browser PushManager.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh().catch((error) => setMessage(error.message));
+  }, []);
+
+  useEffect(() => {
+    // 設定アプリなどで通知の許可を変えて戻ってきたときに、カードの状態を取り直す。
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refreshPush();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, []);
 
   async function run(action: "subscribe" | "unsubscribe") {
@@ -46,7 +63,10 @@ export default function Home() {
       }
       await refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "うまく処理できませんでした。");
+      console.error(error);
+      setMessage(describePushError(error));
+      // 許可ダイアログでブロックされた場合などに、カードを新しい状態（ブロック中の案内）へ切り替える。
+      await refreshPush();
     } finally {
       setLoading(false);
     }
@@ -73,36 +93,13 @@ export default function Home() {
         </header>
 
         <section className="grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
-          <div className="rounded-lg bg-slate-950 p-6 text-white shadow-sm">
-            <p className="text-sm font-bold text-amber-300">現在の状態</p>
-            <div className="mt-4 flex flex-wrap items-end justify-between gap-5">
-              <div>
-                <p className="text-3xl font-bold">{subscribed ? "受け取り中" : "未設定"}</p>
-                <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">
-                  {subscribed
-                    ? "今日のお告げを待機しています。予定は下の一覧で確認できます。"
-                    : "通知を許可すると、今日のどこかでOTSUGEからお告げが届きます。"}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  className="rounded-md bg-cyan-300 px-4 py-3 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-cyan-200 disabled:opacity-40"
-                  disabled={loading || subscribed}
-                  onClick={() => run("subscribe")}
-                >
-                  受け取る
-                </button>
-                <button
-                  className="rounded-md border border-white/30 px-4 py-3 text-sm font-bold text-white transition hover:bg-white/10 disabled:opacity-40"
-                  disabled={loading || !subscribed}
-                  onClick={() => run("unsubscribe")}
-                >
-                  停止する
-                </button>
-              </div>
-            </div>
-            {message && <p className="mt-5 rounded-md bg-white/10 p-3 text-sm text-slate-100">{message}</p>}
-          </div>
+          <PushCard
+            view={getPushCardView(pushEnvironment)}
+            loading={loading}
+            message={message}
+            onSubscribe={() => run("subscribe")}
+            onUnsubscribe={() => run("unsubscribe")}
+          />
 
           <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
             <p className="text-sm font-bold text-slate-500">次のお告げ</p>
