@@ -27,6 +27,15 @@ export const db = global.otsugeDb ?? createDb();
 if (process.env.NODE_ENV !== "production") global.otsugeDb = db;
 
 async function initialize() {
+  if (!(await db.schema.hasTable("admin_sessions"))) {
+    await db.schema.createTable("admin_sessions", (table) => {
+      table.string("id_hash", 64).primary();
+      table.timestamp("created_at").notNullable();
+      table.timestamp("expires_at").notNullable().index();
+      table.timestamp("revoked_at").nullable();
+    });
+  }
+
   if (!(await db.schema.hasTable("notifications"))) {
     await db.schema.createTable("notifications", (table) => {
       table.increments("id").primary();

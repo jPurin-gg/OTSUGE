@@ -5,14 +5,14 @@ import { handleError, json } from "@/lib/http";
 import { notificationInput } from "@/lib/validation";
 
 export async function GET(request: NextRequest) {
-  if (!isAdmin(request)) return unauthorized();
+  if (!(await isAdmin(request))) return unauthorized();
   const database = await readyDb();
   const rows = await database("notifications").select("*").orderBy("id", "desc");
   return json({ notifications: rows });
 }
 
 export async function POST(request: NextRequest) {
-  if (!isAdmin(request)) return unauthorized();
+  if (!(await isAdmin(request))) return unauthorized();
   try {
     const input = notificationInput.parse(await request.json());
     const database = await readyDb();

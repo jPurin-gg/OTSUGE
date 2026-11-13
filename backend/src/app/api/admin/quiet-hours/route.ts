@@ -5,14 +5,14 @@ import { handleError, json } from "@/lib/http";
 import { quietHoursInput } from "@/lib/validation";
 
 export async function GET(request: NextRequest) {
-  if (!isAdmin(request)) return unauthorized();
+  if (!(await isAdmin(request))) return unauthorized();
   const database = await readyDb();
   const rows = await database("quiet_hours").select("*").orderBy("id", "asc");
   return json({ quietHours: rows });
 }
 
 export async function POST(request: NextRequest) {
-  if (!isAdmin(request)) return unauthorized();
+  if (!(await isAdmin(request))) return unauthorized();
   try {
     const input = quietHoursInput.parse(await request.json());
     const database = await readyDb();
