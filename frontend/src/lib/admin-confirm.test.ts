@@ -4,6 +4,9 @@ import {
   confirmAndSend,
   ConfirmSchedule,
   countRegeneration,
+  deleteNotificationConfirmText,
+  deleteQuietHourConfirmText,
+  deleteScheduleConfirmText,
   isResend,
   regenerateConfirmText,
   scheduleState,
@@ -164,4 +167,49 @@ test("regenerateConfirmText: 削除される予定がないときも、そのこ
   const onlySent = regenerateConfirmText([sent]);
   assert.match(onlySent, /削除される予定はありません/);
   assert.ok(onlySent.includes("送信済み・破棄済みの予定 1件は残ります"));
+});
+
+test("deleteNotificationConfirmText: 対象の本文・設定と、一緒に消える当日の予定の件数が入る", () => {
+  const notification = {
+    id: 1,
+    message: "水を飲め",
+    start_time: "09:00",
+    end_time: "22:00",
+    count_per_day: 3,
+    enabled: true,
+  };
+  const todays = [unsent, unsent, sent, schedule({ notification_id: 2 }), schedule({ notification_id: 2, sent: true })];
+  const text = deleteNotificationConfirmText(notification, todays);
+  assert.ok(text.includes("「水を飲め」"));
+  assert.ok(text.includes("09:00-22:00 / 1日3回 / 有効"));
+  assert.ok(text.includes("配信予定も一緒に消えます（今日の予定 3件、うち未送信 2件）"));
+  assert.match(text, /未送信の予定は送信されなくなります/);
+  assert.match(text, /取り消せません/);
+
+  const none = deleteNotificationConfirmText({ ...notification, id: 9, enabled: 0 }, todays);
+  assert.ok(none.includes("無効"));
+  assert.ok(none.includes("今日の予定はありません"));
+  assert.doesNotMatch(none, /送信されなくなります/);
+});
+
+test("deleteScheduleConfirmText: 対象の時刻・本文・状態と、削除の影響が入る", () => {
+  const text = deleteScheduleConfirmText(schedule({ manually_modified: true }));
+  assert.ok(text.includes(`${TIME}「水を飲め」（未送信 / 手動編集）`));
+  assert.match(text, /この予定は送信されません/);
+  assert.match(text, /取り消せません/);
+
+  const sentText = deleteScheduleConfirmText(sent);
+  assert.ok(sentText.includes(`${TIME}「水を飲め」（送信済み）`));
+  assert.match(sentText, /送信ログは残ります/);
+  assert.doesNotMatch(sentText, /送信されません/);
+});
+
+test("deleteQuietHourConfirmText: 対象の時間帯と、削除の影響が入る", () => {
+  const text = deleteQuietHourConfirmText({ start_time: "00:00", end_time: "08:00", enabled: true });
+  assert.ok(text.includes("00:00-08:00（有効）"));
+  assert.match(text, /この時間帯にも配信時刻が入るようになります/);
+
+  const disabled = deleteQuietHourConfirmText({ start_time: "00:00", end_time: "08:00", enabled: 0 });
+  assert.ok(disabled.includes("00:00-08:00（無効）"));
+  assert.match(disabled, /変わりません/);
 });

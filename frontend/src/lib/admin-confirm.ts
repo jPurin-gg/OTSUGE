@@ -12,6 +12,21 @@ export type ConfirmSchedule = {
   message: string;
 };
 
+export type ConfirmNotification = {
+  id: number;
+  message: string;
+  start_time: string;
+  end_time: string;
+  count_per_day: number;
+  enabled: Flag;
+};
+
+export type ConfirmQuietHour = {
+  start_time: string;
+  end_time: string;
+  enabled: Flag;
+};
+
 export type ScheduleState = "unsent" | "sent" | "discarded";
 
 /** 配信予定の状態。破棄は sent も立つので、破棄を先に見る。 */
@@ -114,5 +129,63 @@ export function regenerateConfirmText(schedules: Pick<ConfirmSchedule, "sent" | 
     ...(kept.length > 0 ? [`・${kept.join("と、")}は残ります。`] : []),
     "",
     deleted > 0 ? "削除した予定は元に戻せません。引き直しますか？" : "つくった予定は自動で配信されます。実行しますか？",
+  ].join("\n");
+}
+
+/**
+ * お告げの削除の確認文。お告げを削除すると、そのお告げの配信予定も一緒に消える。
+ * todaysSchedules には画面に出ている当日の予定（全お告げ分）を渡す。
+ */
+export function deleteNotificationConfirmText(
+  notification: ConfirmNotification,
+  todaysSchedules: (Pick<ConfirmSchedule, "sent" | "discarded"> & { notification_id: number })[],
+) {
+  const own = todaysSchedules.filter((schedule) => schedule.notification_id === notification.id);
+  const unsent = own.filter((schedule) => scheduleState(schedule) === "unsent").length;
+  const impact =
+    own.length > 0
+      ? `このお告げの配信予定も一緒に消えます（今日の予定 ${own.length}件、うち未送信 ${unsent}件）。`
+      : "このお告げの配信予定も一緒に消えます（今日の予定はありません）。";
+  return [
+    "お告げを削除します。",
+    "",
+    `「${notification.message}」`,
+    `${notification.start_time}-${notification.end_time} / 1日${notification.count_per_day}回 / ${Boolean(notification.enabled) ? "有効" : "無効"}`,
+    "",
+    impact,
+    unsent > 0 ? "未送信の予定は送信されなくなります。送信ログは残ります。" : "送信ログは残ります。",
+    "",
+    "削除は取り消せません。削除しますか？",
+  ].join("\n");
+}
+
+/** 配信予定の削除の確認文。 */
+export function deleteScheduleConfirmText(schedule: ConfirmSchedule) {
+  return [
+    "配信予定を削除します。",
+    "",
+    describeSchedule(schedule),
+    "",
+    scheduleState(schedule) === "unsent"
+      ? "削除すると、この予定は送信されません。"
+      : "今日の配信予定の一覧から消えます。送信ログは残ります。",
+    "",
+    "削除は取り消せません。削除しますか？",
+  ].join("\n");
+}
+
+/** 静かにする時間の削除の確認文。 */
+export function deleteQuietHourConfirmText(quiet: ConfirmQuietHour) {
+  const enabled = Boolean(quiet.enabled);
+  return [
+    "静かにする時間を削除します。",
+    "",
+    `${quiet.start_time}-${quiet.end_time}（${enabled ? "有効" : "無効"}）`,
+    "",
+    enabled
+      ? "すでにある配信予定は変わりません。次に予定をつくるときから、この時間帯にも配信時刻が入るようになります。"
+      : "無効の設定なので、削除しても配信時刻の決まり方は変わりません。",
+    "",
+    "削除は取り消せません。削除しますか？",
   ].join("\n");
 }

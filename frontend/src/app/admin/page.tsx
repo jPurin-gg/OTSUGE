@@ -1,7 +1,14 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { confirmAndSend, isResend, regenerateConfirmText } from "@/lib/admin-confirm";
+import {
+  confirmAndSend,
+  deleteNotificationConfirmText,
+  deleteQuietHourConfirmText,
+  deleteScheduleConfirmText,
+  isResend,
+  regenerateConfirmText,
+} from "@/lib/admin-confirm";
 import { api, formatTime, toDatetimeLocal } from "@/lib/api";
 
 type NotificationItem = {
@@ -152,8 +159,9 @@ export default function AdminPage() {
     await loadAll();
   }
 
-  async function remove(path: string, label: string) {
-    if (!window.confirm(`${label}を削除します。よろしいですか？`)) return;
+  // confirmText には、対象を特定できる情報と、削除で起きることを入れる（@/lib/admin-confirm でつくる）。
+  async function remove(path: string, confirmText: string) {
+    if (!window.confirm(confirmText)) return;
     await api(path, { method: "DELETE" });
     await loadAll();
   }
@@ -321,7 +329,9 @@ export default function AdminPage() {
                     </button>
                     <button
                       className="rounded-full bg-red-50 px-3 py-1 text-sm font-bold text-red-700"
-                      onClick={() => remove(`/api/admin/notifications/${item.id}`, "お告げ")}
+                      onClick={() =>
+                        remove(`/api/admin/notifications/${item.id}`, deleteNotificationConfirmText(item, schedules))
+                      }
                     >
                       削除
                     </button>
@@ -389,7 +399,7 @@ export default function AdminPage() {
                   <button
                     type="button"
                     className="text-sm font-bold text-red-700"
-                    onClick={() => remove(`/api/admin/quiet-hours/${quiet.id}`, "静かにする時間")}
+                    onClick={() => remove(`/api/admin/quiet-hours/${quiet.id}`, deleteQuietHourConfirmText(quiet))}
                   >
                     削除
                   </button>
@@ -449,7 +459,7 @@ export default function AdminPage() {
                   )}
                   <button
                     className="rounded-full bg-red-50 px-3 py-2 text-sm font-bold text-red-700"
-                    onClick={() => remove(`/api/admin/schedules/${schedule.id}`, "配信予定")}
+                    onClick={() => remove(`/api/admin/schedules/${schedule.id}`, deleteScheduleConfirmText(schedule))}
                   >
                     削除
                   </button>
