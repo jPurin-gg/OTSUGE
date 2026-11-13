@@ -1,5 +1,5 @@
 import type { Knex } from "knex";
-import type { NotificationRecord, QuietHoursRecord } from "./types";
+import type { NotificationRecord, QuietHoursRecord, ScheduleRecord } from "./types";
 import { dayBounds, localDateKey, localMinuteOfDay, minutesFromTime, timeFromMinutes, zonedDateTimeToUtc } from "./time";
 
 export function isQuietMinute(minute: number, quietHours: Pick<QuietHoursRecord, "start_time" | "end_time" | "enabled">[]) {
@@ -17,20 +17,25 @@ export function chooseMinutes(
   quietHours: Pick<QuietHoursRecord, "start_time" | "end_time" | "enabled">[],
   random = Math.random,
   earliestMinute = 0,
+  occupiedMinutes: number[] = [],
 ) {
+  const remainingCount = notification.count_per_day - occupiedMinutes.length;
+  if (remainingCount <= 0) return [];
+
   const start = Math.max(minutesFromTime(notification.start_time), earliestMinute);
   const end = notification.end_time === "00:00" ? 23 * 60 + 59 : minutesFromTime(notification.end_time);
   if (end < start) return [];
 
   const candidates = Array.from({ length: end - start + 1 }, (_, index) => start + index)
-    .filter((minute) => !isQuietMinute(minute, quietHours))
+    .filter((minute) => !isQuietMinute(minute, quietHours)
+      && occupiedMinutes.every((existing) => Math.abs(existing - minute) >= notification.min_interval_minutes))
     .sort(() => random() - 0.5);
 
   const selected: number[] = [];
   for (const minute of candidates) {
     if (selected.every((existing) => Math.abs(existing - minute) >= notification.min_interval_minutes)) {
       selected.push(minute);
-      if (selected.length === notification.count_per_day) break;
+      if (selected.length === remainingCount) break;
     }
   }
   return selected.sort((a, b) => a - b);
@@ -49,11 +54,22 @@ export async function generateDailySchedules(database: Knex, dateKey = localDate
     .andWhere({ sent: false, manually_modified: false })
     .delete();
 
+  const retainedSchedules = (await database("schedules")
+    .where("scheduled_at", ">=", start.toISOString())
+    .andWhere("scheduled_at", "<", end.toISOString())
+    .select("notification_id", "scheduled_at")) as Pick<ScheduleRecord, "notification_id" | "scheduled_at">[];
+
   let generated = 0;
   const warnings: string[] = [];
   for (const notification of notifications) {
-    const selected = chooseMinutes(notification, quietHours, Math.random, earliestMinute);
-    if (selected.length < notification.count_per_day) {
+    const occupiedMinutes = retainedSchedules
+      .filter((schedule) => schedule.notification_id === notification.id)
+      .map((schedule) => {
+        const scheduledAt = new Date(schedule.scheduled_at);
+        return localMinuteOfDay(scheduledAt) + scheduledAt.getUTCSeconds() / 60 + scheduledAt.getUTCMilliseconds() / 60000;
+      });
+    const selected = chooseMinutes(notification, quietHours, Math.random, earliestMinute, occupiedMinutes);
+    if (selected.length + occupiedMinutes.length < notification.count_per_day) {
       warnings.push(`「${notification.message}」は条件内で${selected.length}件のみ生成しました。`);
     }
     if (!selected.length) continue;
