@@ -83,3 +83,11 @@ docker compose run --rm backend npx web-push generate-vapid-keys
 - `0 0 * * *`: 当日分スケジュールを生成
 
 内部APIは `CRON_SECRET` のBearer認証で保護しています。
+
+## API エラーの調査
+
+サーバーエラーは汎用文言と参照用の request ID を返します。ID はエラー文言・JSON の `requestId`・`X-Request-ID` ヘッダに含まれます。画面に表示された参照 ID を使って、backend の `API request failed` または frontend の `API proxy failed` のサーバーログから原因を調べてください。SQL・スタック・接続先などの例外詳細はレスポンスへ含めません。
+
+ID はエラー処理時にサーバーが生成します。フロントの中継は backend が返した UUID 形式の ID を維持し、上流の 5xx 応答や中継の通信失敗も汎用化します。400 などの入力エラーの文言と項目別の `details` は従来どおりです。
+
+ブラウザ向けの `/api` 中継では `/api/internal` 以下を 403 で拒否します。Cron は従来どおり backend の内部 API を直接呼び出し、Bearer 認証を行います。
