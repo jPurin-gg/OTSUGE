@@ -156,10 +156,10 @@ export default function AdminPage() {
   }
 
   async function sendNow(id: number) {
-    const result = await api<{ delivered: number; failed: number; removed: number }>(`/api/admin/schedules/${id}/send`, {
+    const result = await api<{ delivered: number; failed: number; removed: number; pending: boolean }>(`/api/admin/schedules/${id}/send`, {
       method: "POST",
     });
-    setMessage(`今すぐ送りました。成功: ${result.delivered}件 / 失敗: ${result.failed}件 / 購読解除: ${result.removed}件`);
+    setMessage(`${result.pending ? "配信を開始しました。残りは次回の定期処理で続けて送ります。" : "今すぐ送りました。"}成功: ${result.delivered}件 / 失敗: ${result.failed}件 / 購読解除: ${result.removed}件`);
     await loadAll();
   }
 
