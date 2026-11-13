@@ -23,8 +23,12 @@ export async function PUT(request: NextRequest, context: Context) {
 
 export async function DELETE(request: NextRequest, context: Context) {
   if (!isAdmin(request)) return unauthorized();
-  const { id } = await context.params;
-  const database = await readyDb();
-  await database("notifications").where({ id: Number(id) }).delete();
-  return json({ ok: true });
+  try {
+    const { id } = await context.params;
+    const database = await readyDb();
+    await database("notifications").where({ id: Number(id) }).delete();
+    return json({ ok: true });
+  } catch (error) {
+    return handleError(error);
+  }
 }

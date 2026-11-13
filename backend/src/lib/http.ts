@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
@@ -9,6 +10,10 @@ export function handleError(error: unknown) {
   if (error instanceof ZodError) {
     return json({ error: "入力内容が不正です。", details: error.issues }, { status: 400 });
   }
-  console.error(error);
-  return json({ error: error instanceof Error ? error.message : "サーバーエラーが発生しました。" }, { status: 500 });
+  const requestId = randomUUID();
+  console.error("API request failed", { requestId, error });
+  return json(
+    { error: `サーバーエラーが発生しました。（参照ID: ${requestId}）`, requestId },
+    { status: 500, headers: { "x-request-id": requestId, "cache-control": "no-store" } },
+  );
 }
