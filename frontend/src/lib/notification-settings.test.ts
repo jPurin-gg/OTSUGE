@@ -4,6 +4,10 @@ import {
   allDayQuietHoursConfirmText,
   isAllDayQuietHours,
   notificationTimeError,
+  redrawConfirmText,
+  redrawRemovableCount,
+  redrawResultText,
+  saveNotice,
   todayStatus,
 } from "./notification-settings";
 
@@ -106,4 +110,71 @@ test("無効なお告げは、当日の未送信分を送らないことを表�
     text: "無効（今日の未送信 1 件は送りません）",
   });
   assert.equal(todayStatus({ ...item, enabled: false }, []).text, "無効（配信しません）");
+});
+
+test("引き直しの確認文は、削除される未送信の件数（手動編集を除く）と、変わらないものを伝える", () => {
+  const schedules = [
+    schedule(),
+    schedule(),
+    schedule({ sent: true }),
+    schedule({ manually_modified: true }),
+    schedule({ notification_id: 2 }),
+  ];
+  assert.equal(redrawRemovableCount(item, schedules), 2);
+  const text = redrawConfirmText(item, schedules);
+  assert.match(text, /「水を飲め」/);
+  assert.match(text, /未送信の予定 2 件を削除/);
+  assert.match(text, /ほかのお告げの予定は変わりません/);
+});
+
+test("新規作成の後は、今日の予定がないことを伝えて引き直しを勧める", () => {
+  const notice = saveNotice(null, item, 0);
+  assert.equal(notice.offerRedraw, true);
+  assert.match(notice.text, /追加しました/);
+  assert.match(notice.text, /今日の予定はまだありません/);
+});
+
+test("開始・終了・回数・間隔を変えた後は、今日の予定に未反映であることを伝えて引き直しを勧める", () => {
+  for (const change of [
+    { start_time: "10:00" },
+    { end_time: "23:00" },
+    { count_per_day: 5 },
+    { min_interval_minutes: 30 },
+  ]) {
+    const notice = saveNotice(item, { ...item, ...change }, 2);
+    assert.equal(notice.offerRedraw, true, JSON.stringify(change));
+    assert.match(notice.text, /今日の予定にはまだ反映されていません/);
+  }
+});
+
+test("本文だけを変えた後は、引き直しを勧めない", () => {
+  assert.deepEqual(saveNotice(item, { ...item, message: "お茶を飲め" }, 2), {
+    text: "「お茶を飲め」を保存しました。",
+    offerRedraw: false,
+  });
+});
+
+test("無効にした後は、今日の未送信分も送らないことを伝える", () => {
+  assert.deepEqual(saveNotice(item, { ...item, enabled: false }, 2), {
+    text: "「水を飲め」を無効にしました。今日の未送信 2 件も送りません。",
+    offerRedraw: false,
+  });
+  assert.equal(saveNotice(item, { ...item, enabled: false }, 0).offerRedraw, false);
+  assert.match(saveNotice(null, { ...item, enabled: false }, 0).text, /無効のため配信しません/);
+});
+
+test("有効に戻した後は、残っている未送信分が送られることを伝える。予定がなければ引き直しを勧める", () => {
+  const disabled = { ...item, enabled: 0 };
+  assert.deepEqual(saveNotice(disabled, item, 2), {
+    text: "「水を飲め」を有効にしました。今日の未送信 2 件は予定どおり送ります。",
+    offerRedraw: false,
+  });
+  assert.equal(saveNotice(disabled, item, 0).offerRedraw, true);
+});
+
+test("引き直しの結果は、削除と生成の件数、足りなかった場合の警告を伝える", () => {
+  assert.equal(
+    redrawResultText(item, { generated: 1, removed: 2, warnings: ["「水を飲め」は条件内で1件のみ生成しました。"] }),
+    "「水を飲め」の今日の予定を引き直しました（削除 2 件 / 新しく 1 件）。 「水を飲め」は条件内で1件のみ生成しました。",
+  );
 });

@@ -97,3 +97,82 @@ export function todayStatus(
       : "設定回数に足りません";
   return { total, pending, tone: "warn", text: `${counts}（${reason}）` };
 }
+
+/** 引き直しで削除される予定（そのお告げの未送信で、手動編集していないもの）の件数。 */
+export function redrawRemovableCount(item: NotificationRow, schedules: ScheduleRow[]) {
+  return schedules.filter(
+    (schedule) =>
+      schedule.notification_id === item.id && !Boolean(schedule.sent) && !Boolean(schedule.manually_modified),
+  ).length;
+}
+
+export function redrawConfirmText(item: NotificationRow, schedules: ScheduleRow[]) {
+  return [
+    `「${item.message}」の今日の予定を引き直します。`,
+    `未送信の予定 ${redrawRemovableCount(item, schedules)} 件を削除して、現在の設定でこれからの時刻に作り直します。`,
+    "送信済みの予定、手動で時刻を変えた予定、ほかのお告げの予定は変わりません。",
+    "よろしいですか？",
+  ].join("\n");
+}
+
+export type SaveNotice = {
+  text: string;
+  /** 当日の予定に反映するための「今日の分を引き直す」を勧めるか。 */
+  offerRedraw: boolean;
+};
+
+/**
+ * お告げを保存した直後に出す案内。保存した設定が当日の予定にどう効くかを伝える。
+ * before は編集前の設定（新規作成なら null）、pendingToday は当日の未送信の件数。
+ */
+export function saveNotice(
+  before: NotificationSettings | null,
+  after: NotificationSettings,
+  pendingToday: number,
+): SaveNotice {
+  const name = `「${after.message}」`;
+  if (!Boolean(after.enabled)) {
+    if (before && Boolean(before.enabled)) {
+      const today = pendingToday > 0 ? `今日の未送信 ${pendingToday} 件も送りません。` : "今日の残りの分も送りません。";
+      return { text: `${name}を無効にしました。${today}`, offerRedraw: false };
+    }
+    return { text: `${name}を保存しました。無効のため配信しません。`, offerRedraw: false };
+  }
+  if (!before) {
+    return {
+      text: `${name}を追加しました。今日の予定はまだありません（自動の生成は毎日0時です）。今日から届けるには、今日の分を引き直してください。`,
+      offerRedraw: true,
+    };
+  }
+  const timingChanged =
+    before.start_time !== after.start_time ||
+    before.end_time !== after.end_time ||
+    before.count_per_day !== after.count_per_day ||
+    before.min_interval_minutes !== after.min_interval_minutes;
+  if (timingChanged) {
+    return {
+      text: `${name}を保存しました。開始・終了・回数・間隔の変更は、今日の予定にはまだ反映されていません。今日から反映するには、今日の分を引き直してください。`,
+      offerRedraw: true,
+    };
+  }
+  if (!Boolean(before.enabled)) {
+    if (pendingToday > 0) {
+      return { text: `${name}を有効にしました。今日の未送信 ${pendingToday} 件は予定どおり送ります。`, offerRedraw: false };
+    }
+    return {
+      text: `${name}を有効にしました。今日の予定はまだありません。今日から届けるには、今日の分を引き直してください。`,
+      offerRedraw: true,
+    };
+  }
+  return { text: `${name}を保存しました。`, offerRedraw: false };
+}
+
+export function redrawResultText(
+  item: Pick<NotificationRow, "message">,
+  result: { generated: number; removed: number; warnings: string[] },
+) {
+  return [
+    `「${item.message}」の今日の予定を引き直しました（削除 ${result.removed} 件 / 新しく ${result.generated} 件）。`,
+    ...result.warnings,
+  ].join(" ");
+}

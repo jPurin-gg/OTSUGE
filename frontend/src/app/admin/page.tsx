@@ -9,6 +9,10 @@ import {
   allDayQuietHoursConfirmText,
   isAllDayQuietHours,
   notificationTimeError,
+  redrawConfirmText,
+  redrawRemovableCount,
+  redrawResultText,
+  saveNotice,
   todayStatus,
 } from "@/lib/notification-settings";
 
@@ -58,6 +62,13 @@ type DeliveryLog = {
 type NotificationForm = Omit<NotificationItem, "id">;
 type QuietForm = Omit<QuietHour, "id">;
 
+// お告げのフォームの下に出す案内。redrawId があれば「今日の分を引き直す」ボタンを添える。
+type FormNotice = {
+  tone: "info" | "error";
+  text: string;
+  redrawId: number | null;
+};
+
 const emptyNotification: NotificationForm = {
   message: "",
   start_time: "09:00",
@@ -86,6 +97,7 @@ export default function AdminPage() {
   const [editingNotificationId, setEditingNotificationId] = useState<number | null>(null);
   const [quietForm, setQuietForm] = useState<QuietForm>(emptyQuiet);
   const [editingQuietId, setEditingQuietId] = useState<number | null>(null);
+  const [notificationNotice, setNotificationNotice] = useState<FormNotice | null>(null);
 
   // 開始が終了より後だと1件も生成されないので、入力欄の下に理由を出して保存を止める。
   const notificationTimeProblem = notificationTimeError(notificationForm);
@@ -96,6 +108,7 @@ export default function AdminPage() {
   );
   const isBlocked = (schedule: Schedule) =>
     !Boolean(schedule.sent) && disabledNotificationIds.has(schedule.notification_id);
+  const noticeRedrawTarget = notifications.find((item) => item.id === notificationNotice?.redrawId);
 
   async function loadAll() {
     const [notificationData, quietData, scheduleData, statsData, deliveryLogData] = await Promise.all([
@@ -133,13 +146,49 @@ export default function AdminPage() {
   async function saveNotification(event: FormEvent) {
     event.preventDefault();
     if (notificationTimeProblem) return;
+    const before = notifications.find((item) => item.id === editingNotificationId) ?? null;
     const path = editingNotificationId ? `/api/admin/notifications/${editingNotificationId}` : "/api/admin/notifications";
-    await api(path, {
-      method: editingNotificationId ? "PUT" : "POST",
-      body: JSON.stringify(notificationForm),
-    });
+    try {
+      const saved = await api<{ id?: number }>(path, {
+        method: editingNotificationId ? "PUT" : "POST",
+        body: JSON.stringify(notificationForm),
+      });
+      // 保存した設定が今日の予定にどう効くかを伝え、必要ならこのお告げだけの引き直しを勧める。
+      const id = editingNotificationId ?? saved.id ?? null;
+      const pendingToday = schedules.filter(
+        (schedule) => schedule.notification_id === id && !Boolean(schedule.sent),
+      ).length;
+      const notice = saveNotice(before, notificationForm, pendingToday);
+      setNotificationNotice({ tone: "info", text: notice.text, redrawId: notice.offerRedraw ? id : null });
+    } catch (error) {
+      setNotificationNotice({
+        tone: "error",
+        text: `保存できませんでした。${error instanceof Error ? error.message : ""}`,
+        redrawId: null,
+      });
+      return;
+    }
     setNotificationForm(emptyNotification);
     setEditingNotificationId(null);
+    await loadAll();
+  }
+
+  // このお告げだけ、今日の予定を現在の設定で引き直す。未送信の予定が削除されるときは件数を確認する。
+  async function redrawNotification(item: NotificationItem) {
+    if (redrawRemovableCount(item, schedules) > 0 && !window.confirm(redrawConfirmText(item, schedules))) return;
+    try {
+      const result = await api<{ generated: number; removed: number; warnings: string[] }>(
+        `/api/admin/notifications/${item.id}/schedules`,
+        { method: "POST" },
+      );
+      const text = redrawResultText(item, result);
+      setMessage(text);
+      setNotificationNotice((current) => (current ? { tone: "info", text, redrawId: null } : null));
+    } catch (error) {
+      const text = `今日の予定を引き直せませんでした。${error instanceof Error ? error.message : ""}`;
+      setMessage(text);
+      setNotificationNotice((current) => (current ? { ...current, tone: "error", text } : null));
+    }
     await loadAll();
   }
 
@@ -305,6 +354,25 @@ export default function AdminPage() {
           >
             {editingNotificationId ? "更新" : "追加"}
           </button>
+          {notificationNotice && (
+            <div
+              role={notificationNotice.tone === "error" ? "alert" : "status"}
+              className={`mt-4 rounded-2xl p-4 text-sm ${
+                notificationNotice.tone === "error" ? "bg-red-50 text-red-800" : "bg-cyan-50 text-cyan-900"
+              }`}
+            >
+              <p>{notificationNotice.text}</p>
+              {noticeRedrawTarget && (
+                <button
+                  type="button"
+                  className="mt-3 rounded-full bg-cyan-900 px-4 py-2 text-sm font-bold text-white"
+                  onClick={() => redrawNotification(noticeRedrawTarget)}
+                >
+                  今日の分を引き直す
+                </button>
+              )}
+            </div>
+          )}
         </form>
 
         <section className="rounded-3xl bg-white p-6 shadow-sm">
@@ -322,7 +390,15 @@ export default function AdminPage() {
                     {/* 自動生成で設定回数に満たなかったお告げが、画面を開けば分かるようにする。 */}
                     <TodayBadge status={todayStatus(item, schedules, quietHours)} />
                   </div>
-                  <div className="flex shrink-0 gap-2">
+                  <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                    {Boolean(item.enabled) && (
+                      <button
+                        className="rounded-full bg-cyan-100 px-3 py-1 text-sm font-bold text-cyan-900"
+                        onClick={() => redrawNotification(item)}
+                      >
+                        今日の分を引き直す
+                      </button>
+                    )}
                     <button
                       className="rounded-full bg-slate-100 px-3 py-1 text-sm font-bold"
                       onClick={() => {
