@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { api, formatTime, toDatetimeLocal } from "@/lib/api";
+import { ADMIN_STATUS_LABELS, scheduleStatus } from "@/lib/labels";
 
 type NotificationItem = {
   id: number;
@@ -137,7 +138,7 @@ export default function AdminPage() {
 
   async function generateSchedules() {
     const result = await api<{ generated: number; warnings: string[] }>("/api/admin/schedules", { method: "POST" });
-    setMessage(`今日のお告げを${result.generated}件つくりました。${result.warnings.join(" ")}`);
+    setMessage(`今日の配信予定を${result.generated}件つくりました。${result.warnings.join(" ")}`);
     await loadAll();
   }
 
@@ -174,7 +175,7 @@ export default function AdminPage() {
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            placeholder="ADMIN_PASSWORD"
+            placeholder="合言葉"
           />
           <button className="mt-4 w-full rounded-2xl bg-slate-950 px-4 py-3 font-bold text-white">ログイン</button>
           {message && <p className="mt-4 text-sm text-red-600">{message}</p>}
@@ -195,7 +196,7 @@ export default function AdminPage() {
             更新
           </button>
           <button className="rounded-full bg-slate-950 px-4 py-2 font-bold text-white" onClick={generateSchedules}>
-            今日のお告げを生成
+            今日の配信予定を生成
           </button>
         </div>
       </header>
@@ -383,13 +384,13 @@ export default function AdminPage() {
         <section className="rounded-3xl bg-white p-6 shadow-sm">
           <h2 className="text-xl font-bold">今日の配信予定</h2>
           <div className="mt-4 divide-y divide-slate-100">
-            {schedules.length === 0 && <p className="py-6 text-slate-500">今日の予定はまだありません。</p>}
+            {schedules.length === 0 && <p className="py-6 text-slate-500">今日の配信予定はまだありません。</p>}
             {schedules.map((schedule) => (
               <div key={schedule.id} className="grid gap-3 py-4 md:grid-cols-[120px_1fr_auto] md:items-center">
                 <div>
                   <p className="font-mono text-lg font-bold">{formatTime(schedule.scheduled_at)}</p>
                   <p className="text-xs text-slate-500">
-                    {Boolean(schedule.sent) ? (Boolean(schedule.discarded) ? "破棄" : "送信済み") : "未送信"}
+                    {ADMIN_STATUS_LABELS[scheduleStatus(schedule)]}
                     {Boolean(schedule.manually_modified) ? " / 手動編集" : ""}
                   </p>
                 </div>
@@ -458,9 +459,17 @@ function StatCard({ label, value }: { label: string; value: string }) {
 
 function LogStatus({ status }: { status: DeliveryLog["status"] }) {
   if (status === "discarded") {
-    return <span className="w-fit rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700">破棄</span>;
+    return (
+      <span className="w-fit rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700">
+        {ADMIN_STATUS_LABELS.discarded}
+      </span>
+    );
   }
-  return <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">送信済み</span>;
+  return (
+    <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+      {ADMIN_STATUS_LABELS.sent}
+    </span>
+  );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

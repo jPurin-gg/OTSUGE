@@ -25,7 +25,7 @@ docker compose up --build
 - 管理画面: http://localhost:3000/admin
 - バックエンドAPI: http://localhost:3001（ブラウザからは `/api` 経由）
 
-管理画面の初期パスワードは `backend/backend.env` の `ADMIN_PASSWORD` です。
+管理画面のログインに使う合言葉は `backend/backend.env` の `ADMIN_PASSWORD` です。
 
 ## 本番想定起動
 
@@ -45,7 +45,7 @@ docker compose -f compose.prod.yaml up --build -d
 ```
 
 本番では `database/database.prod.env` のPostgreSQL設定を使います。
-管理画面の本番パスワードは `backend/backend.prod.env` の `ADMIN_PASSWORD` です。
+管理画面の本番の合言葉は `backend/backend.prod.env` の `ADMIN_PASSWORD` です。
 
 ## 環境変数ファイル
 
