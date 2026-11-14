@@ -169,16 +169,20 @@ export default function AdminPage() {
       <main className="mx-auto flex min-h-screen max-w-md items-center px-5">
         <form className="w-full rounded-3xl bg-white p-8 shadow-sm" onSubmit={login}>
           <h1 className="text-3xl font-bold">管理画面</h1>
-          <p className="mt-2 text-slate-500">合言葉を入れてください。</p>
+          <label className="mt-2 block text-slate-500" htmlFor="admin-password">
+            合言葉を入れてください。
+          </label>
           <input
+            id="admin-password"
             className="mt-6 w-full rounded-2xl border border-slate-200 px-4 py-3"
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             placeholder="合言葉"
+            autoComplete="current-password"
           />
           <button className="mt-4 w-full rounded-2xl bg-slate-950 px-4 py-3 font-bold text-white">ログイン</button>
-          {message && <p className="mt-4 text-sm text-red-600">{message}</p>}
+          <div role="alert">{message && <p className="mt-4 text-sm text-red-600">{message}</p>}</div>
         </form>
       </main>
     );
@@ -200,7 +204,10 @@ export default function AdminPage() {
           </button>
         </div>
       </header>
-      {message && <p className="rounded-2xl bg-cyan-50 p-4 text-sm text-cyan-900">{message}</p>}
+      {/* 空のときに余白を取らないよう、メッセージがない間は視覚的に隠す（読み上げの領域は残す）。 */}
+      <div role="status" aria-live="polite" className={message ? undefined : "sr-only"}>
+        {message && <p className="rounded-2xl bg-cyan-50 p-4 text-sm text-cyan-900">{message}</p>}
+      </div>
 
       <section className="grid gap-3 sm:grid-cols-3">
         <StatCard label="購読者" value={`${stats.subscriptionCount}件`} />
@@ -211,8 +218,11 @@ export default function AdminPage() {
       <section className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
         <form className="rounded-3xl bg-white p-6 shadow-sm" onSubmit={saveNotification}>
           <h2 className="text-xl font-bold">{editingNotificationId ? "お告げを編集" : "お告げを作成"}</h2>
-          <label className="mt-4 block text-sm font-bold">本文</label>
+          <label className="mt-4 block text-sm font-bold" htmlFor="notification-message">
+            本文
+          </label>
           <textarea
+            id="notification-message"
             className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3"
             value={notificationForm.message}
             onChange={(event) => setNotificationForm({ ...notificationForm, message: event.target.value })}
@@ -287,6 +297,7 @@ export default function AdminPage() {
                   <div className="flex shrink-0 gap-2">
                     <button
                       className="rounded-full bg-slate-100 px-3 py-1 text-sm font-bold"
+                      aria-label={`お告げ「${item.message}」を編集`}
                       onClick={() => {
                         setEditingNotificationId(item.id);
                         setNotificationForm({
@@ -303,6 +314,7 @@ export default function AdminPage() {
                     </button>
                     <button
                       className="rounded-full bg-red-50 px-3 py-1 text-sm font-bold text-red-700"
+                      aria-label={`お告げ「${item.message}」を削除`}
                       onClick={() => remove(`/api/admin/notifications/${item.id}`, "お告げ")}
                     >
                       削除
@@ -356,7 +368,8 @@ export default function AdminPage() {
                 <span className="flex gap-2">
                   <button
                     type="button"
-                    className="text-sm font-bold"
+                    className="rounded-full bg-white px-3 py-1 text-sm font-bold shadow-sm"
+                    aria-label={`静かにする時間 ${quiet.start_time}-${quiet.end_time} を編集`}
                     onClick={() => {
                       setEditingQuietId(quiet.id);
                       setQuietForm({
@@ -370,7 +383,8 @@ export default function AdminPage() {
                   </button>
                   <button
                     type="button"
-                    className="text-sm font-bold text-red-700"
+                    className="rounded-full bg-red-50 px-3 py-1 text-sm font-bold text-red-700"
+                    aria-label={`静かにする時間 ${quiet.start_time}-${quiet.end_time} を削除`}
                     onClick={() => remove(`/api/admin/quiet-hours/${quiet.id}`, "静かにする時間")}
                   >
                     削除
@@ -399,6 +413,7 @@ export default function AdminPage() {
                   <input
                     className="mt-2 rounded-xl border border-slate-200 px-3 py-2"
                     type="datetime-local"
+                    aria-label={`${scheduleName(schedule)}の配信時刻`}
                     defaultValue={toDatetimeLocal(schedule.scheduled_at)}
                     onBlur={(event) => updateSchedule(schedule.id, event.target.value)}
                   />
@@ -406,12 +421,14 @@ export default function AdminPage() {
                 <div className="flex gap-2">
                   <button
                     className="rounded-full bg-cyan-100 px-3 py-2 text-sm font-bold text-cyan-900"
+                    aria-label={`${scheduleName(schedule)}を今すぐ送る`}
                     onClick={() => sendNow(schedule.id)}
                   >
                     今すぐ送る
                   </button>
                   <button
                     className="rounded-full bg-red-50 px-3 py-2 text-sm font-bold text-red-700"
+                    aria-label={`${scheduleName(schedule)}を削除`}
                     onClick={() => remove(`/api/admin/schedules/${schedule.id}`, "配信予定")}
                   >
                     削除
@@ -446,6 +463,11 @@ export default function AdminPage() {
       </section>
     </main>
   );
+}
+
+// 読み上げで「どの行のボタンか」を区別するための、配信予定の呼び名。
+function scheduleName(schedule: Schedule) {
+  return `${formatTime(schedule.scheduled_at)} の配信予定「${schedule.message}」`;
 }
 
 function StatCard({ label, value }: { label: string; value: string }) {

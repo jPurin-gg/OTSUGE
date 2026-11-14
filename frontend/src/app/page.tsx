@@ -102,14 +102,19 @@ export default function Home() {
                 </button>
               </div>
             </div>
-            {message && <p className="mt-5 rounded-md bg-white/10 p-3 text-sm text-slate-100">{message}</p>}
+            <div role="status" aria-live="polite">
+              {message && <p className="mt-5 rounded-md bg-white/10 p-3 text-sm text-slate-100">{message}</p>}
+            </div>
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
             <p className="text-sm font-bold text-slate-500">次のお告げ</p>
             {nextSchedule ? (
               <>
-                <time className="mt-3 block font-mono text-5xl font-bold text-slate-950">
+                <time
+                  className="mt-3 block font-mono text-5xl font-bold text-slate-950"
+                  dateTime={nextSchedule.scheduled_at}
+                >
                   {formatTime(nextSchedule.scheduled_at)}
                 </time>
                 <p className="mt-3 text-base font-bold leading-7">{nextSchedule.message}</p>
@@ -141,7 +146,9 @@ export default function Home() {
                 key={schedule.id}
                 className="grid gap-3 border-b border-slate-100 px-5 py-4 last:border-b-0 sm:grid-cols-[84px_1fr_auto] sm:items-center"
               >
-                <time className="font-mono text-xl font-bold text-slate-950">{formatTime(schedule.scheduled_at)}</time>
+                <time className="font-mono text-xl font-bold text-slate-950" dateTime={schedule.scheduled_at}>
+                  {formatTime(schedule.scheduled_at)}
+                </time>
                 <p className="min-w-0 text-base leading-7">{schedule.message}</p>
                 <StatusBadge status={scheduleStatus(schedule)} />
               </div>
