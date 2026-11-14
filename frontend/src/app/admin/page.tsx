@@ -1,51 +1,9 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { DeliveryLog, loadAdminData, NotificationItem, QuietHour, Schedule, Stats } from "@/lib/admin-load";
 import { api, formatTime, toDatetimeLocal } from "@/lib/api";
 import { ADMIN_STATUS_LABELS, scheduleStatus } from "@/lib/labels";
-
-type NotificationItem = {
-  id: number;
-  message: string;
-  start_time: string;
-  end_time: string;
-  count_per_day: number;
-  min_interval_minutes: number;
-  enabled: boolean | number;
-};
-
-type QuietHour = {
-  id: number;
-  start_time: string;
-  end_time: string;
-  enabled: boolean | number;
-};
-
-type Schedule = {
-  id: number;
-  notification_id: number;
-  scheduled_at: string;
-  sent: boolean | number;
-  discarded: boolean | number;
-  manually_modified: boolean | number;
-  message: string;
-};
-
-type Stats = {
-  subscriptionCount: number;
-};
-
-type DeliveryLog = {
-  id: number;
-  schedule_id: number | null;
-  status: "sent" | "discarded";
-  message: string;
-  scheduled_at: string;
-  sent_at: string;
-  delivered_count: number;
-  failed_count: number;
-  removed_subscription_count: number;
-};
 
 type NotificationForm = Omit<NotificationItem, "id">;
 type QuietForm = Omit<QuietHour, "id">;
@@ -80,18 +38,12 @@ export default function AdminPage() {
   const [editingQuietId, setEditingQuietId] = useState<number | null>(null);
 
   async function loadAll() {
-    const [notificationData, quietData, scheduleData, statsData, deliveryLogData] = await Promise.all([
-      api<{ notifications: NotificationItem[] }>("/api/admin/notifications"),
-      api<{ quietHours: QuietHour[] }>("/api/admin/quiet-hours"),
-      api<{ schedules: Schedule[] }>("/api/admin/schedules"),
-      api<Stats>("/api/admin/stats"),
-      api<{ deliveryLogs: DeliveryLog[] }>("/api/admin/delivery-logs"),
-    ]);
-    setNotifications(notificationData.notifications);
-    setQuietHours(quietData.quietHours);
-    setSchedules(scheduleData.schedules);
-    setStats(statsData);
-    setDeliveryLogs(deliveryLogData.deliveryLogs);
+    const data = await loadAdminData();
+    setNotifications(data.notifications);
+    setQuietHours(data.quietHours);
+    setSchedules(data.schedules);
+    setStats(data.stats);
+    setDeliveryLogs(data.deliveryLogs);
     setLoggedIn(true);
   }
 
@@ -284,6 +236,7 @@ export default function AdminPage() {
         <section className="rounded-3xl bg-white p-6 shadow-sm">
           <h2 className="text-xl font-bold">お告げ一覧</h2>
           <div className="mt-4 divide-y divide-slate-100">
+            {notifications.length === 0 && <p className="py-6 text-slate-500">お告げはまだありません。</p>}
             {notifications.map((item) => (
               <div key={item.id} className="py-4">
                 <div className="flex items-start justify-between gap-3">
