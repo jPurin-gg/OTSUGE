@@ -6,6 +6,8 @@
 
 ホスト側で `npm install` は不要です。依存関係のインストール、Next.js起動、SQLite利用、Cron実行はDocker内で行います。
 
+依存関係は `frontend/package-lock.json` と `backend/package-lock.json` で固定しており、イメージのビルドでは `npm ci` で入れます。`package.json` の依存を変えたときは、そのディレクトリで `npm install` を実行して `package-lock.json` も一緒にコミットしてください（両者が食い違っていると `npm ci` が失敗します）。
+
 初回だけenvファイルを作成してください。
 
 ```sh
