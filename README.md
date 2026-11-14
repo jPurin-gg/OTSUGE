@@ -67,6 +67,14 @@ docker compose -f compose.prod.yaml up --build -d
 - `database/database.prod.env`
 - `scheduler/scheduler.prod.env`
 
+### `NEXT_PUBLIC_API_BASE_URL` はビルド時に埋め込まれる
+
+frontend の `NEXT_PUBLIC_API_BASE_URL`（ブラウザから見た API の基底URL）は、Next.js の `NEXT_PUBLIC_` 変数なので、`next build` の時点の値がブラウザ向けのコードに埋め込まれます。実行時の環境変数としては読まれません。
+
+- 本番イメージ（`compose.prod.yaml`）は、ビルド時にこの変数を渡していません。`frontend/frontend.prod.env` はコンテナの実行時にしか読まれないため、そこに値を書いたり、起動後に値を変えたりしても、ブラウザ側のコードには反映されません。本番のブラウザは常に同一オリジンの `/api`（frontend が backend へ中継）を呼びます。
+- ローカル（`compose.yaml`）は `next dev` で起動するので、`frontend/frontend.env` の値が起動時に読まれます。変更したら frontend コンテナを再起動してください。
+- 本番で別の値を使いたい場合は、その値を渡してイメージをビルドし直す必要があります（現状の Dockerfile と compose にはその仕組みはありません）。
+
 ## VAPID鍵
 
 Web Pushを実際に送るにはVAPID鍵が必要です。backendコンテナ内で生成できます。
