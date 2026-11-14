@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { api, formatTime } from "@/lib/api";
+import { type DeliveryTone, homeStatusDisplay } from "@/lib/delivery-display";
 import { getSubscriptionStatus, subscribePush, unsubscribePush } from "@/lib/push";
 
 type Schedule = {
@@ -11,6 +12,7 @@ type Schedule = {
   message: string;
   sent: boolean | number;
   discarded: boolean | number;
+  delivery_outcome?: string | null;
 };
 
 export default function Home() {
@@ -142,7 +144,7 @@ export default function Home() {
               >
                 <time className="font-mono text-xl font-bold text-slate-950">{formatTime(schedule.scheduled_at)}</time>
                 <p className="min-w-0 text-base leading-7">{schedule.message}</p>
-                <StatusBadge sent={Boolean(schedule.sent)} discarded={Boolean(schedule.discarded)} />
+                <StatusBadge schedule={schedule} />
               </div>
             ))}
           </div>
@@ -152,12 +154,16 @@ export default function Home() {
   );
 }
 
-function StatusBadge({ sent, discarded }: { sent: boolean; discarded: boolean }) {
-  if (!sent) {
-    return <span className="w-fit rounded-md bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">待機中</span>;
-  }
-  if (discarded) {
-    return <span className="w-fit rounded-md bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700">破棄</span>;
-  }
-  return <span className="w-fit rounded-md bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">送信済</span>;
+const badgeTone: Record<DeliveryTone, string> = {
+  success: "bg-emerald-50 text-emerald-700",
+  warning: "bg-amber-50 text-amber-800",
+  danger: "bg-rose-50 text-rose-700",
+  muted: "bg-slate-100 text-slate-600",
+};
+
+function StatusBadge({ schedule }: { schedule: Schedule }) {
+  const display = homeStatusDisplay(schedule);
+  return (
+    <span className={`w-fit rounded-md px-3 py-1 text-xs font-bold ${badgeTone[display.tone]}`}>{display.label}</span>
+  );
 }
