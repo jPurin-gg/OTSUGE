@@ -2,6 +2,17 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { api, formatTime, toDatetimeLocal } from "@/lib/api";
+import {
+  type DeliveryCounts,
+  type DeliveryDisplay,
+  type DeliveryTone,
+  deliveryLogDetail,
+  deliveryLogDisplay,
+  formatDateTime,
+  scheduleStatusDisplay,
+  sendResultMessage,
+  todaySentNote,
+} from "@/lib/delivery-display";
 
 type NotificationItem = {
   id: number;
@@ -28,10 +39,13 @@ type Schedule = {
   discarded: boolean | number;
   manually_modified: boolean | number;
   message: string;
+  last_delivery?: DeliveryCounts | null;
 };
 
 type Stats = {
   subscriptionCount: number;
+  todaySentCount: number;
+  todayUndeliveredCount: number;
 };
 
 type DeliveryLog = {
@@ -71,7 +85,11 @@ export default function AdminPage() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [quietHours, setQuietHours] = useState<QuietHour[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [stats, setStats] = useState<Stats>({ subscriptionCount: 0 });
+  const [stats, setStats] = useState<Stats>({
+    subscriptionCount: 0,
+    todaySentCount: 0,
+    todayUndeliveredCount: 0,
+  });
   const [deliveryLogs, setDeliveryLogs] = useState<DeliveryLog[]>([]);
   const [notificationForm, setNotificationForm] = useState<NotificationForm>(emptyNotification);
   const [editingNotificationId, setEditingNotificationId] = useState<number | null>(null);
@@ -159,7 +177,7 @@ export default function AdminPage() {
     const result = await api<{ delivered: number; failed: number; removed: number }>(`/api/admin/schedules/${id}/send`, {
       method: "POST",
     });
-    setMessage(`今すぐ送りました。成功: ${result.delivered}件 / 失敗: ${result.failed}件 / 購読解除: ${result.removed}件`);
+    setMessage(sendResultMessage(result));
     await loadAll();
   }
 
@@ -204,7 +222,7 @@ export default function AdminPage() {
       <section className="grid gap-3 sm:grid-cols-3">
         <StatCard label="購読者" value={`${stats.subscriptionCount}件`} />
         <StatCard label="今日の未送信" value={`${schedules.filter((schedule) => !Boolean(schedule.sent)).length}件`} />
-        <StatCard label="最近のログ" value={`${deliveryLogs.length}件`} />
+        <StatCard label="今日の送信" value={`${stats.todaySentCount}回`} note={todaySentNote(stats)} />
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
@@ -389,7 +407,7 @@ export default function AdminPage() {
                 <div>
                   <p className="font-mono text-lg font-bold">{formatTime(schedule.scheduled_at)}</p>
                   <p className="text-xs text-slate-500">
-                    {Boolean(schedule.sent) ? (Boolean(schedule.discarded) ? "破棄" : "送信済み") : "未送信"}
+                    <ScheduleStatus display={scheduleStatusDisplay(schedule)} />
                     {Boolean(schedule.manually_modified) ? " / 手動編集" : ""}
                   </p>
                 </div>
@@ -429,16 +447,14 @@ export default function AdminPage() {
           {deliveryLogs.map((log) => (
             <div key={log.id} className="grid gap-3 py-4 md:grid-cols-[160px_1fr_auto] md:items-center">
               <div>
-                <p className="font-mono text-sm font-bold">{formatTime(log.sent_at)}</p>
-                <p className="text-xs text-slate-500">予定 {formatTime(log.scheduled_at)}</p>
+                <p className="font-mono text-sm font-bold">{formatDateTime(log.sent_at)}</p>
+                <p className="text-xs text-slate-500">予定 {formatDateTime(log.scheduled_at)}</p>
               </div>
               <div>
                 <p className="font-bold">{log.message}</p>
-                <p className="text-sm text-slate-500">
-                  成功 {log.delivered_count} / 失敗 {log.failed_count} / 購読解除 {log.removed_subscription_count}
-                </p>
+                <p className="text-sm text-slate-500">{deliveryLogDetail(log)}</p>
               </div>
-              <LogStatus status={log.status} />
+              <LogStatus display={deliveryLogDisplay(log)} />
             </div>
           ))}
         </div>
@@ -447,20 +463,39 @@ export default function AdminPage() {
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+const toneText: Record<DeliveryTone, string> = {
+  success: "text-emerald-700",
+  warning: "text-amber-700",
+  danger: "text-red-700",
+  muted: "text-slate-500",
+};
+
+const toneBadge: Record<DeliveryTone, string> = {
+  success: "bg-emerald-50 text-emerald-700",
+  warning: "bg-amber-50 text-amber-800",
+  danger: "bg-red-50 text-red-700",
+  muted: "bg-slate-100 text-slate-600",
+};
+
+function StatCard({ label, value, note }: { label: string; value: string; note?: DeliveryDisplay }) {
   return (
     <section className="rounded-3xl bg-white p-5 shadow-sm">
       <p className="text-sm font-bold text-slate-500">{label}</p>
       <p className="mt-2 text-3xl font-bold">{value}</p>
+      {note && <p className={`mt-1 text-xs font-bold ${toneText[note.tone]}`}>{note.label}</p>}
     </section>
   );
 }
 
-function LogStatus({ status }: { status: DeliveryLog["status"] }) {
-  if (status === "discarded") {
-    return <span className="w-fit rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700">破棄</span>;
-  }
-  return <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">送信済み</span>;
+function ScheduleStatus({ display }: { display: DeliveryDisplay }) {
+  if (display.tone === "muted") return <>{display.label}</>;
+  return <span className={`font-bold ${toneText[display.tone]}`}>{display.label}</span>;
+}
+
+function LogStatus({ display }: { display: DeliveryDisplay }) {
+  return (
+    <span className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${toneBadge[display.tone]}`}>{display.label}</span>
+  );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
