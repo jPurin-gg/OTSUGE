@@ -7,7 +7,7 @@ export async function POST(request: NextRequest) {
   try {
     const input = z.object({ password: z.string() }).parse(await request.json());
     if (!process.env.ADMIN_PASSWORD || input.password !== process.env.ADMIN_PASSWORD) {
-      return NextResponse.json({ error: "パスワードが違います。" }, { status: 401 });
+      return NextResponse.json({ error: "合言葉が違います。" }, { status: 401 });
     }
     const response = NextResponse.json({ ok: true });
     setAdminCookie(response);

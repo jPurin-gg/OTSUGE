@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { api, formatTime } from "@/lib/api";
+import { HOME_STATUS_LABELS, ScheduleStatus, scheduleStatus } from "@/lib/labels";
 import { getSubscriptionStatus, subscribePush, unsubscribePush } from "@/lib/push";
 
 type Schedule = {
@@ -80,7 +81,7 @@ export default function Home() {
                 <p className="text-3xl font-bold">{subscribed ? "受け取り中" : "未設定"}</p>
                 <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">
                   {subscribed
-                    ? "今日のお告げを待機しています。予定は下の一覧で確認できます。"
+                    ? "今日のお告げを待っています。下の一覧で確認できます。"
                     : "通知を許可すると、今日のどこかでOTSUGEからお告げが届きます。"}
                 </p>
               </div>
@@ -101,14 +102,19 @@ export default function Home() {
                 </button>
               </div>
             </div>
-            {message && <p className="mt-5 rounded-md bg-white/10 p-3 text-sm text-slate-100">{message}</p>}
+            <div role="status" aria-live="polite">
+              {message && <p className="mt-5 rounded-md bg-white/10 p-3 text-sm text-slate-100">{message}</p>}
+            </div>
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
             <p className="text-sm font-bold text-slate-500">次のお告げ</p>
             {nextSchedule ? (
               <>
-                <time className="mt-3 block font-mono text-5xl font-bold text-slate-950">
+                <time
+                  className="mt-3 block font-mono text-5xl font-bold text-slate-950"
+                  dateTime={nextSchedule.scheduled_at}
+                >
                   {formatTime(nextSchedule.scheduled_at)}
                 </time>
                 <p className="mt-3 text-base font-bold leading-7">{nextSchedule.message}</p>
@@ -116,7 +122,7 @@ export default function Home() {
             ) : (
               <>
                 <p className="mt-3 text-3xl font-bold">静かです</p>
-                <p className="mt-3 text-sm leading-6 text-slate-500">未送信の予定はありません。</p>
+                <p className="mt-3 text-sm leading-6 text-slate-500">未送信のお告げはありません。</p>
               </>
             )}
           </div>
@@ -140,9 +146,11 @@ export default function Home() {
                 key={schedule.id}
                 className="grid gap-3 border-b border-slate-100 px-5 py-4 last:border-b-0 sm:grid-cols-[84px_1fr_auto] sm:items-center"
               >
-                <time className="font-mono text-xl font-bold text-slate-950">{formatTime(schedule.scheduled_at)}</time>
+                <time className="font-mono text-xl font-bold text-slate-950" dateTime={schedule.scheduled_at}>
+                  {formatTime(schedule.scheduled_at)}
+                </time>
                 <p className="min-w-0 text-base leading-7">{schedule.message}</p>
-                <StatusBadge sent={Boolean(schedule.sent)} discarded={Boolean(schedule.discarded)} />
+                <StatusBadge status={scheduleStatus(schedule)} />
               </div>
             ))}
           </div>
@@ -152,12 +160,16 @@ export default function Home() {
   );
 }
 
-function StatusBadge({ sent, discarded }: { sent: boolean; discarded: boolean }) {
-  if (!sent) {
-    return <span className="w-fit rounded-md bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">待機中</span>;
-  }
-  if (discarded) {
-    return <span className="w-fit rounded-md bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700">破棄</span>;
-  }
-  return <span className="w-fit rounded-md bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">送信済</span>;
+const STATUS_BADGE_STYLES: Record<ScheduleStatus, string> = {
+  pending: "bg-emerald-50 text-emerald-700",
+  sent: "bg-slate-100 text-slate-600",
+  discarded: "bg-rose-50 text-rose-700",
+};
+
+function StatusBadge({ status }: { status: ScheduleStatus }) {
+  return (
+    <span className={`w-fit rounded-md px-3 py-1 text-xs font-bold ${STATUS_BADGE_STYLES[status]}`}>
+      {HOME_STATUS_LABELS[status]}
+    </span>
+  );
 }

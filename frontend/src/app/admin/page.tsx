@@ -1,50 +1,9 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { DeliveryLog, loadAdminData, NotificationItem, QuietHour, Schedule, Stats } from "@/lib/admin-load";
 import { api, formatTime, toDatetimeLocal } from "@/lib/api";
-
-type NotificationItem = {
-  id: number;
-  message: string;
-  start_time: string;
-  end_time: string;
-  count_per_day: number;
-  min_interval_minutes: number;
-  enabled: boolean | number;
-};
-
-type QuietHour = {
-  id: number;
-  start_time: string;
-  end_time: string;
-  enabled: boolean | number;
-};
-
-type Schedule = {
-  id: number;
-  notification_id: number;
-  scheduled_at: string;
-  sent: boolean | number;
-  discarded: boolean | number;
-  manually_modified: boolean | number;
-  message: string;
-};
-
-type Stats = {
-  subscriptionCount: number;
-};
-
-type DeliveryLog = {
-  id: number;
-  schedule_id: number | null;
-  status: "sent" | "discarded";
-  message: string;
-  scheduled_at: string;
-  sent_at: string;
-  delivered_count: number;
-  failed_count: number;
-  removed_subscription_count: number;
-};
+import { ADMIN_STATUS_LABELS, scheduleStatus } from "@/lib/labels";
 
 type NotificationForm = Omit<NotificationItem, "id">;
 type QuietForm = Omit<QuietHour, "id">;
@@ -79,18 +38,12 @@ export default function AdminPage() {
   const [editingQuietId, setEditingQuietId] = useState<number | null>(null);
 
   async function loadAll() {
-    const [notificationData, quietData, scheduleData, statsData, deliveryLogData] = await Promise.all([
-      api<{ notifications: NotificationItem[] }>("/api/admin/notifications"),
-      api<{ quietHours: QuietHour[] }>("/api/admin/quiet-hours"),
-      api<{ schedules: Schedule[] }>("/api/admin/schedules"),
-      api<Stats>("/api/admin/stats"),
-      api<{ deliveryLogs: DeliveryLog[] }>("/api/admin/delivery-logs"),
-    ]);
-    setNotifications(notificationData.notifications);
-    setQuietHours(quietData.quietHours);
-    setSchedules(scheduleData.schedules);
-    setStats(statsData);
-    setDeliveryLogs(deliveryLogData.deliveryLogs);
+    const data = await loadAdminData();
+    setNotifications(data.notifications);
+    setQuietHours(data.quietHours);
+    setSchedules(data.schedules);
+    setStats(data.stats);
+    setDeliveryLogs(data.deliveryLogs);
     setLoggedIn(true);
   }
 
@@ -137,7 +90,7 @@ export default function AdminPage() {
 
   async function generateSchedules() {
     const result = await api<{ generated: number; warnings: string[] }>("/api/admin/schedules", { method: "POST" });
-    setMessage(`今日のお告げを${result.generated}件つくりました。${result.warnings.join(" ")}`);
+    setMessage(`今日の配信予定を${result.generated}件つくりました。${result.warnings.join(" ")}`);
     await loadAll();
   }
 
@@ -168,16 +121,20 @@ export default function AdminPage() {
       <main className="mx-auto flex min-h-screen max-w-md items-center px-5">
         <form className="w-full rounded-3xl bg-white p-8 shadow-sm" onSubmit={login}>
           <h1 className="text-3xl font-bold">管理画面</h1>
-          <p className="mt-2 text-slate-500">合言葉を入れてください。</p>
+          <label className="mt-2 block text-slate-500" htmlFor="admin-password">
+            合言葉を入れてください。
+          </label>
           <input
+            id="admin-password"
             className="mt-6 w-full rounded-2xl border border-slate-200 px-4 py-3"
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            placeholder="ADMIN_PASSWORD"
+            placeholder="合言葉"
+            autoComplete="current-password"
           />
           <button className="mt-4 w-full rounded-2xl bg-slate-950 px-4 py-3 font-bold text-white">ログイン</button>
-          {message && <p className="mt-4 text-sm text-red-600">{message}</p>}
+          <div role="alert">{message && <p className="mt-4 text-sm text-red-600">{message}</p>}</div>
         </form>
       </main>
     );
@@ -195,11 +152,14 @@ export default function AdminPage() {
             更新
           </button>
           <button className="rounded-full bg-slate-950 px-4 py-2 font-bold text-white" onClick={generateSchedules}>
-            今日のお告げを生成
+            今日の配信予定を生成
           </button>
         </div>
       </header>
-      {message && <p className="rounded-2xl bg-cyan-50 p-4 text-sm text-cyan-900">{message}</p>}
+      {/* 空のときに余白を取らないよう、メッセージがない間は視覚的に隠す（読み上げの領域は残す）。 */}
+      <div role="status" aria-live="polite" className={message ? undefined : "sr-only"}>
+        {message && <p className="rounded-2xl bg-cyan-50 p-4 text-sm text-cyan-900">{message}</p>}
+      </div>
 
       <section className="grid gap-3 sm:grid-cols-3">
         <StatCard label="購読者" value={`${stats.subscriptionCount}件`} />
@@ -210,8 +170,11 @@ export default function AdminPage() {
       <section className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
         <form className="rounded-3xl bg-white p-6 shadow-sm" onSubmit={saveNotification}>
           <h2 className="text-xl font-bold">{editingNotificationId ? "お告げを編集" : "お告げを作成"}</h2>
-          <label className="mt-4 block text-sm font-bold">本文</label>
+          <label className="mt-4 block text-sm font-bold" htmlFor="notification-message">
+            本文
+          </label>
           <textarea
+            id="notification-message"
             className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3"
             value={notificationForm.message}
             onChange={(event) => setNotificationForm({ ...notificationForm, message: event.target.value })}
@@ -273,6 +236,7 @@ export default function AdminPage() {
         <section className="rounded-3xl bg-white p-6 shadow-sm">
           <h2 className="text-xl font-bold">お告げ一覧</h2>
           <div className="mt-4 divide-y divide-slate-100">
+            {notifications.length === 0 && <p className="py-6 text-slate-500">お告げはまだありません。</p>}
             {notifications.map((item) => (
               <div key={item.id} className="py-4">
                 <div className="flex items-start justify-between gap-3">
@@ -286,6 +250,7 @@ export default function AdminPage() {
                   <div className="flex shrink-0 gap-2">
                     <button
                       className="rounded-full bg-slate-100 px-3 py-1 text-sm font-bold"
+                      aria-label={`お告げ「${item.message}」を編集`}
                       onClick={() => {
                         setEditingNotificationId(item.id);
                         setNotificationForm({
@@ -302,6 +267,7 @@ export default function AdminPage() {
                     </button>
                     <button
                       className="rounded-full bg-red-50 px-3 py-1 text-sm font-bold text-red-700"
+                      aria-label={`お告げ「${item.message}」を削除`}
                       onClick={() => remove(`/api/admin/notifications/${item.id}`, "お告げ")}
                     >
                       削除
@@ -355,7 +321,8 @@ export default function AdminPage() {
                 <span className="flex gap-2">
                   <button
                     type="button"
-                    className="text-sm font-bold"
+                    className="rounded-full bg-white px-3 py-1 text-sm font-bold shadow-sm"
+                    aria-label={`静かにする時間 ${quiet.start_time}-${quiet.end_time} を編集`}
                     onClick={() => {
                       setEditingQuietId(quiet.id);
                       setQuietForm({
@@ -369,7 +336,8 @@ export default function AdminPage() {
                   </button>
                   <button
                     type="button"
-                    className="text-sm font-bold text-red-700"
+                    className="rounded-full bg-red-50 px-3 py-1 text-sm font-bold text-red-700"
+                    aria-label={`静かにする時間 ${quiet.start_time}-${quiet.end_time} を削除`}
                     onClick={() => remove(`/api/admin/quiet-hours/${quiet.id}`, "静かにする時間")}
                   >
                     削除
@@ -383,13 +351,13 @@ export default function AdminPage() {
         <section className="rounded-3xl bg-white p-6 shadow-sm">
           <h2 className="text-xl font-bold">今日の配信予定</h2>
           <div className="mt-4 divide-y divide-slate-100">
-            {schedules.length === 0 && <p className="py-6 text-slate-500">今日の予定はまだありません。</p>}
+            {schedules.length === 0 && <p className="py-6 text-slate-500">今日の配信予定はまだありません。</p>}
             {schedules.map((schedule) => (
               <div key={schedule.id} className="grid gap-3 py-4 md:grid-cols-[120px_1fr_auto] md:items-center">
                 <div>
                   <p className="font-mono text-lg font-bold">{formatTime(schedule.scheduled_at)}</p>
                   <p className="text-xs text-slate-500">
-                    {Boolean(schedule.sent) ? (Boolean(schedule.discarded) ? "破棄" : "送信済み") : "未送信"}
+                    {ADMIN_STATUS_LABELS[scheduleStatus(schedule)]}
                     {Boolean(schedule.manually_modified) ? " / 手動編集" : ""}
                   </p>
                 </div>
@@ -398,6 +366,7 @@ export default function AdminPage() {
                   <input
                     className="mt-2 rounded-xl border border-slate-200 px-3 py-2"
                     type="datetime-local"
+                    aria-label={`${scheduleName(schedule)}の配信時刻`}
                     defaultValue={toDatetimeLocal(schedule.scheduled_at)}
                     onBlur={(event) => updateSchedule(schedule.id, event.target.value)}
                   />
@@ -405,12 +374,14 @@ export default function AdminPage() {
                 <div className="flex gap-2">
                   <button
                     className="rounded-full bg-cyan-100 px-3 py-2 text-sm font-bold text-cyan-900"
+                    aria-label={`${scheduleName(schedule)}を今すぐ送る`}
                     onClick={() => sendNow(schedule.id)}
                   >
                     今すぐ送る
                   </button>
                   <button
                     className="rounded-full bg-red-50 px-3 py-2 text-sm font-bold text-red-700"
+                    aria-label={`${scheduleName(schedule)}を削除`}
                     onClick={() => remove(`/api/admin/schedules/${schedule.id}`, "配信予定")}
                   >
                     削除
@@ -447,6 +418,11 @@ export default function AdminPage() {
   );
 }
 
+// 読み上げで「どの行のボタンか」を区別するための、配信予定の呼び名。
+function scheduleName(schedule: Schedule) {
+  return `${formatTime(schedule.scheduled_at)} の配信予定「${schedule.message}」`;
+}
+
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
     <section className="rounded-3xl bg-white p-5 shadow-sm">
@@ -458,9 +434,17 @@ function StatCard({ label, value }: { label: string; value: string }) {
 
 function LogStatus({ status }: { status: DeliveryLog["status"] }) {
   if (status === "discarded") {
-    return <span className="w-fit rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700">破棄</span>;
+    return (
+      <span className="w-fit rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700">
+        {ADMIN_STATUS_LABELS.discarded}
+      </span>
+    );
   }
-  return <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">送信済み</span>;
+  return (
+    <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+      {ADMIN_STATUS_LABELS.sent}
+    </span>
+  );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

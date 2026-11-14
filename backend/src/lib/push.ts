@@ -22,7 +22,7 @@ export async function sendSchedule(database: Knex, scheduleId: number) {
     .select("s.*", "n.message")
     .where("s.id", scheduleId)
     .first()) as ScheduleWithMessage | undefined;
-  if (!schedule) throw new Error("通知予定が見つかりません。");
+  if (!schedule) throw new Error("配信予定が見つかりません。");
 
   const subscriptions = await database("subscriptions").select("*");
   let delivered = 0;
